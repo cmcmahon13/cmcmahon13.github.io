@@ -1,0 +1,259 @@
+---
+title: "DEI Direction-of-Change Study: Private Cleaning File"
+author: "Casey McMahon"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+library(tidyverse)
+library(janitor)
+library(psych)
+library(sjmisc)
+```
+
+# Purpose
+
+This private file imports and cleans the raw Qualtrics data for the DEI direction-of-change study. It should not be uploaded publicly because it reads from the raw data file and may contain private participant information. The cleaned dataset exported at the end is used by the public-facing technical appendix.
+
+# Import raw Qualtrics data
+
+```{r import-raw-data}
+# EDIT PATH: Update if the raw Qualtrics file moves.
+raw_file <- "~/Documents/reseach projects for websites/dei rollbacks/pilot 9 2(pol orient)x2(hyp direction) Apr25/data + analyses/dei hypocrisy 2 (pol orient) x 2 (hypocrisy type) Apr 2025_April 9, 2025_21.30.csv"
+
+cnames <- readr::read_csv(raw_file, n_max = 0) %>%
+  names()
+
+data_raw <- readr::read_csv(raw_file, skip = 3, col_names = cnames)
+
+data_meta <- readr::read_csv(raw_file, n_max = 1)
+```
+
+# Initial cleaning and exclusions
+
+```{r cleaning}
+data <- data_raw %>%
+  janitor::clean_names()
+
+# Keep real anonymous responses.
+data <- data %>%
+  dplyr::filter(distribution_channel == "anonymous")
+
+# Keep participants who consented.
+data <- data %>%
+  dplyr::filter(consent == "1")
+
+# Attention check: keep participants who passed.
+data_ac_fail <- data %>%
+  dplyr::filter(ac == 0)
+
+data <- data %>%
+  dplyr::filter(ac == 1)
+
+# Remove repeated geolocation clusters of 3 or more.
+data <- data %>%
+  dplyr::mutate(longlat = paste(location_longitude, location_latitude, sep = ","))
+
+data_geo_removed <- data %>%
+  dplyr::group_by(longlat) %>%
+  dplyr::filter(dplyr::n() > 2) %>%
+  dplyr::ungroup()
+
+data <- data %>%
+  dplyr::group_by(longlat) %>%
+  dplyr::filter(dplyr::n() < 3) %>%
+  dplyr::ungroup()
+
+# Full-stop / punctuation check.
+data <- data %>%
+  dplyr::mutate(
+    punctuation = stringr::str_to_lower(punctuation),
+    punctuation_clean = dplyr::recode(
+      punctuation,
+      "a period" = "period",
+      "a period." = "period",
+      "peroid" = "period",
+      "period" = "period",
+      "period sign" = "period",
+      "period." = "period",
+      "pereiod" = "period",
+      "the mark used to end a statement is called a period." = "period",
+      "the punctuation mark. shown above, is a period." = "period",
+      '(".") period' = "period",
+      "punctuation mark, period" = "period",
+      .default = NA_character_,
+      .missing = NA_character_
+    )
+  )
+
+data_fullstop_fail <- data %>%
+  dplyr::filter(punctuation_clean != "period" | is.na(punctuation_clean))
+
+data <- data %>%
+  dplyr::filter(punctuation_clean == "period")
+```
+
+# Remove private or unnecessary columns
+
+```{r drop-private-columns}
+data <- data %>%
+  dplyr::select(
+    -dplyr::any_of(c(
+      "start_date", "end_date", "status", "ip_address", "progress",
+      "duration_in_seconds", "recorded_date", "response_id",
+      "recipient_last_name", "recipient_first_name", "recipient_email",
+      "external_reference", "location_latitude", "location_longitude",
+      "distribution_channel", "user_language", "prolific_pid", "longlat",
+      "t1_first_click", "t1_last_click", "t1_page_submit", "t1_click_count",
+      "t2_first_click", "t2_last_click", "t2_page_submit", "t2_click_count",
+      "t3_first_click", "t3_last_click", "t3_page_submit", "t3_click_count",
+      "t4_first_click", "t4_last_click", "t4_page_submit", "t4_click_count",
+      "t5_first_click", "t5_last_click", "t5_page_submit", "t5_click_count"
+    ))
+  ) %>%
+  tibble::rowid_to_column("ppid") %>%
+  dplyr::mutate(ppid = ppid + 100)
+```
+
+# Create analysis variables
+
+```{r create-analysis-variables}
+data <- data %>%
+  dplyr::mutate(
+    condition = dplyr::recode(
+      condition,
+      "1" = "pro_anti",
+      "2" = "anti_pro",
+      .default = as.character(condition)
+    ),
+    condition_label = dplyr::recode(
+      condition,
+      "pro_anti" = "Pro-DEI to anti-DEI",
+      "anti_pro" = "Anti-DEI to pro-DEI"
+    ),
+    age = as.numeric(age),
+    over_poli = as.numeric(over_poli),
+    econ_poli = as.numeric(econ_poli),
+    social_poli = as.numeric(social_poli),
+    over_poli_r = 8 - over_poli,
+    econ_poli_r = 8 - econ_poli,
+    social_poli_r = 8 - social_poli,
+    over_poli_s = dplyr::case_when(
+      over_poli_r %in% 1:3 ~ "Liberal",
+      over_poli_r == 4 ~ "Moderate",
+      over_poli_r %in% 5:7 ~ "Conservative",
+      TRUE ~ NA_character_
+    ),
+    over_poli_s = factor(over_poli_s, levels = c("Liberal", "Moderate", "Conservative")),
+    over_poli_sn = dplyr::case_when(
+      over_poli_s == "Liberal" ~ 1,
+      over_poli_s == "Moderate" ~ 2,
+      over_poli_s == "Conservative" ~ 3,
+      TRUE ~ NA_real_
+    )
+  )
+
+# DEI support. Items 6 and 7 are reverse-scored.
+data <- data %>%
+  dplyr::mutate(
+    dplyr::across(dplyr::starts_with("div_support_"), as.numeric),
+    div_support_6_r = 8 - div_support_6,
+    div_support_7_r = 8 - div_support_7,
+    div_support = rowMeans(
+      dplyr::pick(div_support_1, div_support_2, div_support_3, div_support_4, div_support_5, div_support_6_r, div_support_7_r),
+      na.rm = TRUE
+    )
+  )
+
+# Pew-style DEI attitude item: -1 = bad, 0 = neither, 1 = good.
+data <- data %>%
+  dplyr::mutate(
+    pew = as.numeric(pew),
+    pew_r = dplyr::case_when(
+      pew == 1 ~ 1,
+      pew == 2 ~ -1,
+      pew == 3 ~ 0,
+      TRUE ~ NA_real_
+    )
+  )
+
+# Hypocrisy scale.
+data <- data %>%
+  dplyr::mutate(
+    dplyr::across(hypocrisy_1:hypocrisy_5, as.numeric),
+    hypocrisy = rowMeans(dplyr::pick(hypocrisy_1, hypocrisy_2, hypocrisy_3, hypocrisy_4, hypocrisy_5), na.rm = TRUE)
+  )
+
+# Genuineness scale. Items 2 and 3 are reverse-scored.
+data <- data %>%
+  dplyr::mutate(
+    dplyr::across(gen_1:gen_4, as.numeric),
+    gen_2_r = 8 - gen_2,
+    gen_3_r = 8 - gen_3,
+    genuineness = rowMeans(dplyr::pick(gen_1, gen_2_r, gen_3_r, gen_4), na.rm = TRUE)
+  )
+
+# Interest in learning more: 1 = yes, 0 = no.
+data <- data %>%
+  dplyr::mutate(
+    moreinfo_num = dplyr::case_when(
+      moreinfo == 1 ~ 1,
+      moreinfo == 2 ~ 0,
+      TRUE ~ NA_real_
+    )
+  )
+
+# SDO scale. Items 3, 4, 7, and 8 are reverse-scored.
+data <- data %>%
+  dplyr::mutate(
+    dplyr::across(sdo_1:sdo_8, as.numeric),
+    sdo_3r = 8 - sdo_3,
+    sdo_4r = 8 - sdo_4,
+    sdo_7r = 8 - sdo_7,
+    sdo_8r = 8 - sdo_8,
+    sdo = rowMeans(dplyr::pick(sdo_1, sdo_2, sdo_3r, sdo_4r, sdo_5, sdo_6, sdo_7r, sdo_8r), na.rm = TRUE)
+  )
+
+# Win-win beliefs scale.
+data <- data %>%
+  dplyr::mutate(
+    dplyr::across(wwb_1:wwb_10, as.numeric),
+    wwbs = rowMeans(dplyr::pick(wwb_1, wwb_2, wwb_3, wwb_4, wwb_5, wwb_6, wwb_7, wwb_8, wwb_9, wwb_10), na.rm = TRUE)
+  )
+```
+
+# Data checks
+
+```{r checks}
+list(
+  N_final = nrow(data),
+  condition = table(data$condition_label, useNA = "ifany"),
+  political_orientation = table(data$over_poli_s, useNA = "ifany"),
+  failed_attention_check = nrow(data_ac_fail),
+  failed_full_stop = nrow(data_fullstop_fail),
+  removed_geolocation = nrow(data_geo_removed)
+)
+```
+
+# Export cleaned data
+
+```{r export-cleaned-data}
+# EDIT PATH: Save into the website/project data folder.
+dir.create("data", showWarnings = FALSE)
+readr::write_rds(data, "data/dei-direction-change-cleaned.rds")
+
+output_dir = "data"
+readr::write_csv(data, file.path(output_dir, "dei-direction-change-cleaned.csv"))
+
+```

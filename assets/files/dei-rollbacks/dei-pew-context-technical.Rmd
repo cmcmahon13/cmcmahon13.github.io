@@ -1,0 +1,402 @@
+---
+title: "Pew DEI at Work: Contextual Technical Appendix"
+author: "Casey McMahon"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: hide
+    keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+library(tidyverse)
+library(haven)
+library(survey)
+library(knitr)
+library(kableExtra)
+library(scales)
+
+options(survey.lonely.psu = "adjust")
+
+clean_kable <- function(df, caption = NULL, align = NULL) {
+  kableExtra::kable(
+    df,
+    format = "html",
+    caption = caption,
+    align = align,
+    escape = FALSE
+  ) %>%
+    kableExtra::kable_styling(
+      full_width = FALSE,
+      position = "center",
+      bootstrap_options = c("striped", "hover", "condensed")
+    )
+}
+
+as_num <- function(x) {
+  suppressWarnings(as.numeric(x))
+}
+
+format_pct <- function(x, digits = 1) {
+  paste0(sprintf(paste0("%.", digits, "f"), 100 * x), "%")
+}
+```
+
+# Overview
+
+This appendix uses Pew Research Center's 2023 American Trends Panel Wave 121 survey as descriptive context for the portfolio project on DEI commitments and organizational credibility. The goal is not to test the experimental hypotheses directly. Instead, this appendix summarizes whether workers report seeing common workplace DEI policies and how workers who report those policies evaluate their impact.
+
+The public-facing portfolio page can use these descriptive results to motivate the experimental studies: DEI policies are not abstract commitments; they are workplace signals that employees may notice and evaluate.
+
+# Data import
+
+Update the `raw_data_path` below to point to the public Pew `.sav` file on your computer.
+
+```{r data-import}
+raw_data_path <- "~/Documents/reseach projects for websites/dei rollbacks/dei lay perceptions pew 2023/W121_Feb23/ATP W121.sav"
+
+data_raw <- haven::read_sav(raw_data_path)
+```
+
+# Variables used
+
+The Pew survey asked workers whether their organization had five workplace DEI policies and, among workers who reported each policy, what impact that policy had where they work.
+
+```{r variable-labels}
+policy1_vars <- c(
+  "DEIPOLICY1_a_W121",
+  "DEIPOLICY1_b_W121",
+  "DEIPOLICY1_c_W121",
+  "DEIPOLICY1_d_W121",
+  "DEIPOLICY1_e_W121"
+)
+
+policy2_vars <- c(
+  "DEIPOLICY2_a_W121",
+  "DEIPOLICY2_b_W121",
+  "DEIPOLICY2_c_W121",
+  "DEIPOLICY2_d_W121",
+  "DEIPOLICY2_e_W121"
+)
+
+policy_labels <- c(
+  "DEIPOLICY1_a_W121" = "DEI staff role",
+  "DEIPOLICY1_b_W121" = "DEI trainings or meetings",
+  "DEIPOLICY1_c_W121" = "Fair hiring, pay, or promotion policies",
+  "DEIPOLICY1_d_W121" = "Employee Resource Groups",
+  "DEIPOLICY1_e_W121" = "Salary-range transparency",
+  "DEIPOLICY2_a_W121" = "DEI staff role",
+  "DEIPOLICY2_b_W121" = "DEI trainings or meetings",
+  "DEIPOLICY2_c_W121" = "Fair hiring, pay, or promotion policies",
+  "DEIPOLICY2_d_W121" = "Employee Resource Groups",
+  "DEIPOLICY2_e_W121" = "Salary-range transparency"
+)
+```
+
+# Data preparation
+
+Refused responses are coded as `99` in several Pew variables. They are set to missing here. Structural missingness is preserved; for example, impact questions were only asked when respondents reported that a given policy was present.
+
+```{r data-prep}
+vars_to_clean <- c(
+  policy1_vars,
+  policy2_vars,
+  "WEIGHT_W121",
+  "QKEY",
+  "F_GENDER",
+  "F_RACECMB",
+  "F_AGECAT",
+  "F_EDUCCAT",
+  "F_IDEO"
+)
+
+vars_to_clean <- intersect(vars_to_clean, names(data_raw))
+
+data <- data_raw %>%
+  dplyr::mutate(
+    dplyr::across(
+      dplyr::all_of(vars_to_clean),
+      ~ {
+        x <- .x
+        x_num <- as_num(x)
+        x[x_num == 99] <- NA
+        x
+      }
+    )
+  )
+```
+
+# Sample checks
+
+```{r sample-size, echo=FALSE, results='asis'}
+sample_table <- tibble::tibble(
+  `Sample definition` = "Workers included in Pew ATP Wave 121 public dataset",
+  N = nrow(data)
+)
+
+clean_kable(sample_table, caption = "Sample size")
+```
+
+```{r demographics, echo=FALSE, results='asis'}
+gender_table <- data %>%
+  dplyr::mutate(
+    gender = dplyr::case_when(
+      as_num(F_GENDER) == 1 ~ "Men",
+      as_num(F_GENDER) == 2 ~ "Women",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  dplyr::filter(!is.na(gender)) %>%
+  dplyr::count(gender, name = "N") %>%
+  dplyr::mutate(Percent = format_pct(N / sum(N))) %>%
+  dplyr::rename(Gender = gender)
+
+clean_kable(gender_table, caption = "Gender distribution")
+```
+
+# DEI policy prevalence
+
+This section estimates the percentage of workers who reported that their workplace had each DEI policy. Responses of "not sure" are retained in the denominator; the estimate is the share who answered "yes."
+
+```{r policy-prevalence-data}
+policy_prevalence_long <- data %>%
+  dplyr::select(QKEY, WEIGHT_W121, dplyr::all_of(policy1_vars)) %>%
+  tidyr::pivot_longer(
+    cols = dplyr::all_of(policy1_vars),
+    names_to = "policy_var",
+    values_to = "policy_response"
+  ) %>%
+  dplyr::mutate(
+    policy_response_num = as_num(policy_response),
+    policy = dplyr::recode(policy_var, !!!policy_labels),
+    reported_policy = dplyr::case_when(
+      policy_response_num == 1 ~ 1,
+      policy_response_num %in% c(2, 3) ~ 0,
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  dplyr::filter(!is.na(reported_policy), !is.na(WEIGHT_W121))
+
+prevalence_design <- survey::svydesign(
+  ids = ~QKEY,
+  weights = ~WEIGHT_W121,
+  data = policy_prevalence_long
+)
+
+prevalence_est <- survey::svyby(
+  ~reported_policy,
+  ~policy,
+  prevalence_design,
+  survey::svymean,
+  na.rm = TRUE,
+  vartype = c("se", "ci")
+) %>%
+  as.data.frame() %>%
+  dplyr::rename(
+    proportion = reported_policy,
+    se = se,
+    ci_lower = ci_l,
+    ci_upper = ci_u
+  ) %>%
+  dplyr::mutate(
+    policy = forcats::fct_reorder(policy, proportion)
+  )
+```
+
+```{r policy-prevalence-table, echo=FALSE, results='asis'}
+prevalence_table <- prevalence_est %>%
+  dplyr::transmute(
+    Policy = as.character(policy),
+    `% reporting policy` = format_pct(proportion),
+    `95% CI` = paste0(format_pct(ci_lower), "–", format_pct(ci_upper))
+  ) %>%
+  dplyr::arrange(desc(`% reporting policy`))
+
+clean_kable(prevalence_table, caption = "Workers reporting each DEI policy at their workplace")
+```
+
+```{r policy-prevalence-plot, echo=FALSE, fig.width=8, fig.height=4.8}
+pew_policy_prevalence_plot <- ggplot(
+  prevalence_est,
+  aes(x = proportion, y = policy)
+) +
+  geom_point(size = 2.6) +
+  geom_errorbarh(
+    aes(xmin = ci_lower, xmax = ci_upper),
+    height = 0.18,
+    linewidth = 0.6
+  ) +
+  scale_x_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0, max(prevalence_est$ci_upper, na.rm = TRUE) * 1.08)
+  ) +
+  labs(
+    title = "Workers report seeing different DEI policies at work",
+    x = "Weighted percentage reporting policy",
+    y = NULL
+  ) +
+  theme_classic(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    panel.grid.major.x = element_line(linewidth = 0.25),
+    panel.grid.minor = element_blank()
+  )
+
+pew_policy_prevalence_plot
+```
+
+# Perceived impact of reported DEI policies
+
+This section summarizes perceived impact among workers who reported that their workplace had each policy and were therefore asked the corresponding impact item.
+
+```{r policy-impact-data}
+policy_impact_long <- data %>%
+  dplyr::select(QKEY, WEIGHT_W121, dplyr::all_of(policy2_vars)) %>%
+  tidyr::pivot_longer(
+    cols = dplyr::all_of(policy2_vars),
+    names_to = "policy_var",
+    values_to = "impact_response"
+  ) %>%
+  dplyr::mutate(
+    impact_response_num = as_num(impact_response),
+    policy = dplyr::recode(policy_var, !!!policy_labels),
+    impact_category = dplyr::case_when(
+      impact_response_num %in% c(1, 2) ~ "Positive impact",
+      impact_response_num == 3 ~ "Neither positive nor negative",
+      impact_response_num %in% c(4, 5) ~ "Negative impact",
+      TRUE ~ NA_character_
+    ),
+    impact_category = factor(
+      impact_category,
+      levels = c("Positive impact", "Neither positive nor negative", "Negative impact")
+    )
+  ) %>%
+  dplyr::filter(!is.na(impact_category), !is.na(WEIGHT_W121))
+
+impact_design <- survey::svydesign(
+  ids = ~QKEY,
+  weights = ~WEIGHT_W121,
+  data = policy_impact_long
+)
+
+impact_est <- survey::svyby(
+  ~I(impact_category == "Positive impact") +
+    I(impact_category == "Neither positive nor negative") +
+    I(impact_category == "Negative impact"),
+  ~policy,
+  impact_design,
+  survey::svymean,
+  na.rm = TRUE
+) %>%
+  as.data.frame()
+
+names(impact_est) <- names(impact_est) %>%
+  stringr::str_replace_all("I\\(impact_category == \\\"", "") %>%
+  stringr::str_replace_all("\\\"\\)TRUE", "")
+
+impact_plot_df <- impact_est %>%
+  dplyr::select(policy, `Positive impact`, `Neither positive nor negative`, `Negative impact`) %>%
+  tidyr::pivot_longer(
+    cols = -policy,
+    names_to = "impact_category",
+    values_to = "proportion"
+  ) %>%
+  dplyr::mutate(
+    impact_category = factor(
+      impact_category,
+      levels = c("Positive impact", "Neither positive nor negative", "Negative impact")
+    )
+  )
+```
+
+```{r policy-impact-table, echo=FALSE, results='asis'}
+impact_table <- impact_plot_df %>%
+  dplyr::mutate(Percent = format_pct(proportion)) %>%
+  dplyr::select(
+    Policy = policy,
+    Impact = impact_category,
+    Percent
+  ) %>%
+  tidyr::pivot_wider(
+    names_from = Impact,
+    values_from = Percent
+  )
+
+clean_kable(impact_table, caption = "Perceived impact of DEI policies among workers who report having each policy")
+```
+
+```{r policy-impact-plot, echo=FALSE, fig.width=8, fig.height=5.2}
+impact_plot_df <- impact_plot_df %>%
+  dplyr::mutate(
+    impact_category = factor(
+      impact_category,
+      levels = c("Negative impact", "Neither positive nor negative", "Positive impact")
+    )
+  )
+
+pew_policy_impact_plot <- ggplot(
+  impact_plot_df,
+  aes(x = proportion, y = policy, fill = impact_category)
+) +
+  geom_col(position = "fill", width = 0.7) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_fill_manual(
+    values = c(
+    "Positive impact" = "#00BA38",                
+    "Neither positive nor negative" = "#BEBEBE",   
+    "Negative impact" = "#F8766D"                  
+    ),
+    breaks = c(
+      "Positive impact",
+      "Neither positive nor negative",
+      "Negative impact"
+    )
+  ) +
+  labs(
+    title = "Workers often view reported DEI policies as having positive impact",
+    x = "Weighted percentage among workers reporting each policy",
+    y = NULL,
+    fill = NULL
+  ) +
+  theme_classic(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "top"
+  )
+
+pew_policy_impact_plot
+```
+
+
+```{r save-figures, eval=FALSE}
+#saving the figures 
+ggsave(
+  "../assets/img/dei-pew-policy-prevalence.png",
+  pew_policy_prevalence_plot,
+  width = 8,
+  height = 4.8,
+  dpi = 300
+)
+
+ggsave(
+  "../assets/img/dei-pew-policy-impact.png",
+  pew_policy_impact_plot,
+  width = 8,
+  height = 5.2,
+  dpi = 300
+)
+```
+
+# Brief takeaway
+
+The Pew data provide descriptive context for the experimental studies. Workers report seeing a range of workplace DEI policies, and workers who report those policies often evaluate their impact. This supports the public-facing project framing: DEI policies operate as visible organizational signals that people can notice, interpret, and evaluate.

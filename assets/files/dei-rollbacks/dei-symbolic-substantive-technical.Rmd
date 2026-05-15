@@ -1,0 +1,302 @@
+---
+title: "DEI Symbolic/Substantive Study: Technical Appendix"
+author: "Casey McMahon"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+---
+
+# DEI Symbolic/Substantive Study: Technical Appendix
+
+This appendix reports the analyses for a study examining whether people distinguish between DEI actions that primarily communicate organizational values and DEI actions that appear more concrete, structural, or resource-backed. Participants rated a set of DEI policies on a 0–100 symbolic-to-substantive scale, where higher values indicate that the policy was perceived as more substantive.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+library(tidyverse)
+library(psych)
+library(kableExtra)
+library(corrr)
+library(forcats)
+
+format_num <- function(x, digits = 2) {
+  dplyr::if_else(
+    is.na(x),
+    "",
+    sprintf(paste0("%.", digits, "f"), x)
+  )
+}
+
+format_p_text <- function(p) {
+  dplyr::case_when(
+    is.na(p) ~ "",
+    p < .001 ~ "< .001",
+    TRUE ~ sprintf("%.3f", p)
+  )
+}
+
+clean_kable <- function(df, caption = NULL, align = NULL) {
+  kableExtra::kable(
+    df,
+    format = "html",
+    caption = caption,
+    align = align,
+    escape = FALSE
+  ) %>%
+    kableExtra::kable_styling(
+      full_width = FALSE,
+      position = "center",
+      bootstrap_options = c("striped", "hover", "condensed")
+    )
+}
+
+summarize_continuous <- function(data, var) {
+  data %>%
+    dplyr::summarise(
+      N = sum(!is.na({{ var }})),
+      M = mean({{ var }}, na.rm = TRUE),
+      SD = sd({{ var }}, na.rm = TRUE),
+      Min = min({{ var }}, na.rm = TRUE),
+      Max = max({{ var }}, na.rm = TRUE)
+    ) %>%
+    dplyr::mutate(
+      dplyr::across(c(M, SD, Min, Max), ~ sprintf("%.2f", .x))
+    )
+}
+```
+
+## Load analytic data
+
+This technical appendix assumes the private cleaning file has already been run and saved a de-identified analytic dataset.
+
+```{r load-data}
+data <- read_csv("~/Documents/github/casey-portfolio-site/assets/files/dei-rollbacks/data/dei-symbolic-substantive-cleaned.csv")
+```
+
+## Study design
+
+Participants evaluated 25 DEI policies on a 0–100 scale. The scale was coded so that lower values indicate that a policy was perceived as more symbolic, while higher values indicate that a policy was perceived as more substantive. This study serves as the first step in the broader project by testing whether people perceive meaningful differences among DEI actions before evaluating how organizations maintain or change their commitments.
+
+## Sample characteristics
+
+```{r sample-size-table, echo=FALSE, results='asis'}
+sample_n <- tibble::tibble(
+  `Final analytic N` = nrow(data)
+)
+
+clean_kable(sample_n, caption = "Final analytic sample")
+```
+
+```{r gender-table, echo=FALSE, results='asis'}
+gender_table <- data %>%
+  dplyr::count(gender, name = "N") %>%
+  dplyr::filter(!is.na(gender)) %>%
+  dplyr::mutate(
+    Percent = sprintf("%.1f%%", 100 * N / sum(N)),
+    Gender = dplyr::recode(
+      as.character(gender),
+      "1" = "Man",
+      "2" = "Woman",
+      "4" = "Another gender",
+      .default = as.character(gender)
+    )
+  ) %>%
+  dplyr::select(Gender, N, Percent)
+
+clean_kable(gender_table, caption = "Participant gender")
+```
+
+```{r race-table, echo=FALSE, results='asis'}
+
+data = data %>% 
+  mutate(race_r =
+           case_when(race == 1 ~ 1,  
+                     race == 2 ~ 2,
+                     race == 3 ~ 3,
+                     race == 4 ~ 4,
+                     race == 5 ~ 5,
+                     race == 6 ~ 6,
+                     race == 7 ~ 7,
+                     race == 8 ~ 8,
+                     race == 12 ~ 7,
+                     race == 13 ~ 7,
+                     race == 14 ~ 7,
+                     race == 15 ~ 7,
+                     race == 18 ~ 7,
+                     race == 24 ~ 7,
+                     race == 34 ~ 7,
+                     race == 123 ~ 7,
+                     race == 126 ~ 7,
+                     race == 146 ~ 7,
+                     race == 234 ~ 7,
+                     race == 246 ~ 7
+                     ))
+
+race_table <- data %>%
+  dplyr::count(race_r, name = "N") %>%
+  dplyr::filter(!is.na(race_r)) %>%
+  dplyr::mutate(
+    Percent = sprintf("%.1f%%", 100 * N / sum(N)),
+    Race = dplyr::recode(
+      as.character(race_r),
+      "1" = "White",
+      "2" = "Asian",
+      "3" = "Black",
+      "4" = "Hispanic/ Latino/a",
+      "5" = "Native American",
+      "6" = "Middle Eastern",
+      "7" = "Bi/ multiracial",
+      "8" = "Another race",
+      .default = as.character(race_r)
+    )
+  ) %>%
+  dplyr::select(Race, N, Percent)
+
+clean_kable(race_table, caption = "Participant race")
+```
+
+```{r age-table, echo=FALSE, results='asis'}
+age_table <- data %>%
+  dplyr::mutate(age = as.numeric(age)) %>%
+  summarize_continuous(age)
+
+clean_kable(age_table, caption = "Participant age")
+```
+
+## Policy labels
+
+```{r policy-labels}
+policy_labels <- c(
+  p01 = "Inclusive language",
+  p02 = "Inclusive meeting norms",
+  p03 = "Chosen names and pronouns",
+  p04 = "Employee Resource Groups",
+  p05 = "DEI goals and metrics",
+  p06 = "Recruiting pipelines",
+  p07 = "Diverse candidate slates",
+  p08 = "DEI training",
+  p09 = "Accessibility policy",
+  p10 = "DEI audits",
+  p11 = "Structured interviews",
+  p12 = "Blind résumé review",
+  p13 = "Pay ranges",
+  p14 = "Accommodation process",
+  p15 = "Inclusive facilities",
+  p16 = "Paid leave",
+  p17 = "Flexible work",
+  p18 = "Mentorship/sponsorship",
+  p19 = "Leader compensation tied to DEI",
+  p20 = "Safe reporting channels",
+  p21 = "Annual diversity statements",
+  p22 = "Heritage-month celebrations",
+  p23 = "DEI webpage",
+  p24 = "Inclusive signage",
+  p25 = "DEI town halls"
+)
+
+policy_vars <- names(policy_labels)
+```
+
+## Perceived substantiveness of DEI policies
+
+The primary descriptive analysis ranks the 25 DEI policies by their mean perceived substantiveness. This plot is the clearest summary of the study: it shows which actions were perceived as relatively symbolic versus relatively substantive.
+
+```{r policy-summary}
+summary_by_policy <- data %>%
+  dplyr::select(ppid, dplyr::all_of(policy_vars)) %>%
+  tidyr::pivot_longer(
+    cols = dplyr::all_of(policy_vars),
+    names_to = "policy",
+    values_to = "substantiveness"
+  ) %>%
+  dplyr::mutate(substantiveness = as.numeric(substantiveness)) %>%
+  dplyr::filter(!is.na(substantiveness)) %>%
+  dplyr::group_by(policy) %>%
+  dplyr::summarise(
+    N = dplyr::n_distinct(ppid),
+    M = mean(substantiveness, na.rm = TRUE),
+    Median = median(substantiveness, na.rm = TRUE),
+    SD = sd(substantiveness, na.rm = TRUE),
+    SE = SD / sqrt(N),
+    ci_lower = M - qt(.975, df = N - 1) * SE,
+    ci_upper = M + qt(.975, df = N - 1) * SE,
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    Policy = dplyr::recode(policy, !!!policy_labels),
+    Policy = forcats::fct_reorder(Policy, M)
+  ) %>%
+  dplyr::arrange(M)
+```
+
+```{r ranked-policy-plot, echo=FALSE, fig.width=9, fig.height=8}
+ranked_policy_plot <- ggplot(
+  summary_by_policy,
+  aes(x = M, y = Policy)
+) +
+  geom_vline(xintercept = 50, linetype = "dashed", linewidth = 0.5) +
+  geom_errorbarh(
+    aes(xmin = ci_lower, xmax = ci_upper),
+    height = 0.18,
+    linewidth = 0.6
+  ) +
+  geom_point(size = 2.4) +
+  scale_x_continuous(
+    limits = c(0, 100),
+    breaks = seq(0, 100, 20)
+  ) +
+  labs(
+    x = "Perceived substantiveness\n0 = more symbolic, 100 = more substantive",
+    y = NULL,
+    title = "Participants distinguished symbolic from substantive DEI actions"
+  ) +
+  theme_classic(base_size = 12) +
+  theme(
+    axis.text.y = element_text(size = 10),
+    plot.title = element_text(face = "bold"),
+    panel.grid.major.x = element_line(linewidth = 0.25),
+    panel.grid.minor = element_blank()
+  )
+
+ranked_policy_plot
+```
+
+The ranked plot shows that participants differentiated among DEI policies rather than treating all actions as equivalent. Policies involving concrete structures, resources, or accountability tended to be rated as more substantive, whereas public-facing signals and communications tended to be rated as more symbolic.
+
+```{r save-ranked-policy-plot, eval=FALSE}
+ggsave(
+  filename = "../assets/img/dei-symbolic-substantive-ranked-policies.png",
+  plot = ranked_policy_plot,
+  width = 9,
+  height = 8,
+  dpi = 300
+)
+```
+
+```{r policy-summary-table, echo=FALSE, results='asis'}
+policy_summary_table <- summary_by_policy %>%
+  dplyr::mutate(
+    M = sprintf("%.2f", M),
+    Median = sprintf("%.2f", Median),
+    SD = sprintf("%.2f", SD),
+    `95% CI` = paste0("[", sprintf("%.2f", ci_lower), ", ", sprintf("%.2f", ci_upper), "]")
+  ) %>%
+  dplyr::select(
+    Policy,
+    N,
+    M,
+    Median,
+    SD,
+    `95% CI`
+  )
+
+clean_kable(policy_summary_table, caption = "Perceived substantiveness ratings by policy")
+```
+

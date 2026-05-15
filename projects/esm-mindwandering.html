@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Methodological Toolbox: Mapping Daily Mind Wandering with Experience Sampling</title>
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+
+<body>
+  <main class="page">
+    <section class="project-hero">
+      <p class="project-kicker">Experience sampling · Daily diary methods · Within-person modeling</p>
+
+      <h1>Methodological Toolbox: Mapping Daily Mind Wandering with Experience Sampling</h1>
+
+      <p class="project-subtitle">
+        A small pilot study demonstrating how repeated daily surveys can be cleaned, visualized, and modeled to distinguish day-to-day dynamics from stable between-person differences.
+      </p>
+
+      <div class="project-meta">
+        <span>ESM / daily diary</span>
+        <span>Within-person analysis</span>
+        <span>Multilevel models</span>
+        <span>Data visualization</span>
+        <span>R workflow</span>
+      </div>
+
+      <div class="button-row">
+        <a class="button" href="../assets/files/esm-pilot-technical-report.html">View technical appendix</a>
+        <a class="button secondary" href="../projects.html">Back to projects</a>
+      </div>
+    </section>
+
+    <article class="case-study">
+      <section class="case-study-section">
+        <h2>The purpose of this pilot</h2>
+
+        <p>
+          This project is best understood as a methodological toolbox rather than a hypothesis-driven findings report. The pilot included a small sample of participants who completed repeated daily reports of mind wandering and scarcity mindset. Because the sample was small, the goal is not to make strong population-level claims. Instead, the project shows how experience sampling data can be prepared, summarized, visualized, and modeled.
+        </p>
+
+        <p>
+          The core methodological question is: what can repeated daily data show us that a single cross-sectional survey cannot? The figures below demonstrate several answers: daily trajectories, individual variability, raw associations, within-person associations, between-person associations, and heterogeneity in person-specific patterns.
+        </p>
+      </section>
+
+      <section class="case-study-section">
+        <h2>Executive summary</h2>
+
+        <div class="case-study-grid">
+          <div class="finding-card">
+            <h3>Small pilot sample</h3>
+            <p>
+              The dataset included <strong>14 participants</strong>, <strong>3 study days</strong>, and <strong>35 person-day observations</strong>. Half of participants contributed 2 daily observations and half contributed 3.
+            </p>
+          </div>
+
+          <div class="finding-card">
+            <h3>Mind wandering was variable</h3>
+            <p>
+              Daily mind wandering averaged about <strong>3 on a 1–9 scale</strong> across the three days, but individual trajectories showed meaningful variation across people and days.
+            </p>
+          </div>
+
+          <div class="finding-card">
+            <h3>Scarcity differed more between people</h3>
+            <p>
+              Scarcity mindset had a high intraclass correlation, <strong>ICC = .81</strong>, meaning most of the variation in this pilot was between people rather than within people across days.
+            </p>
+          </div>
+
+          <div class="finding-card">
+            <h3>Within- and between-person patterns differed</h3>
+            <p>
+              In the multilevel model, between-person scarcity predicted higher mind wandering, <strong>b = 0.49, p = .004</strong>, while daily within-person scarcity deviations were not clearly associated with mind wandering, <strong>b = -0.38, p = .174</strong>.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="case-study-section">
+        <h2>What the data look like</h2>
+
+        <p>
+          Experience sampling data have a nested structure: days are nested within people. The first step is to visualize both the shape of the responses and how each person moves over time. These plots are descriptive checks, but they are also useful for communicating what repeated-measures data make visible.
+        </p>
+
+        <div class="figure-block">
+          <img src="../assets/img/esm-distribution-plot.png" alt="Distribution of daily mind wandering and scarcity mindset ratings" />
+          <p class="figure-caption">
+            <strong>Distribution of daily responses.</strong> This plot shows the spread of daily mind wandering and scarcity mindset ratings across all person-days. It helps diagnose whether responses cluster at the low end, high end, or span the full scale. In this pilot, mind wandering tended to be low-to-moderate on average, while scarcity mindset showed a wide range of responses.
+          </p>
+        </div>
+
+        <div class="figure-block">
+          <img src="../assets/img/esm-daily-trajectories.png" alt="Spaghetti plot showing daily trajectories of mind wandering and scarcity mindset by participant" />
+          <p class="figure-caption">
+            <strong>Daily trajectories.</strong> Each line represents one participant over time. This “spaghetti plot” shows the repeated-measures structure directly: some participants were fairly stable across days, while others shifted more noticeably. This is one of the clearest ways to show why ESM data are different from one-time survey data: the unit of analysis is not only the person, but also the person-day.
+          </p>
+        </div>
+      </section>
+
+      <section class="case-study-section">
+        <h2>What repeated measures add</h2>
+
+        <p>
+          A cross-sectional survey can estimate average levels of mind wandering or scarcity mindset. An ESM design can also estimate how much each person fluctuates. That matters because two people can have the same average level but very different day-to-day patterns.
+        </p>
+
+        <div class="figure-block">
+          <img src="../assets/img/esm-within-person-variability.png" alt="Within-person variability in daily mind wandering and scarcity mindset" />
+          <p class="figure-caption">
+            <strong>Within-person variability.</strong> This figure summarizes how much each participant’s daily responses varied across the pilot. The technical appendix calculated several person-level features, including means, standard deviations, entropy, mean square of successive differences, and probability of acute change. For the portfolio, the key point is methodological: ESM data can describe not only what people typically report, but how stable or variable their experiences are.
+          </p>
+        </div>
+      </section>
+
+      <section class="case-study-section">
+        <h2>Separating raw, between-person, and within-person associations</h2>
+
+        <p>
+          One of the most important lessons from repeated-measures data is that the same two variables can have different relationships depending on the level of analysis. A raw daily association combines two sources of variation: people who are generally higher or lower than others, and days when the same person is higher or lower than usual.
+        </p>
+
+        <div class="figure-block">
+          <img src="../assets/img/esm-raw-mind-scarcity-association.png" alt="Raw daily association between mind wandering and scarcity mindset" />
+          <p class="figure-caption">
+            <strong>Raw daily association.</strong> This plot shows the overall relationship between daily mind wandering and daily scarcity mindset before separating within-person and between-person variation. It is a useful starting point, but it can be misleading if interpreted alone because it mixes stable individual differences with day-to-day changes.
+          </p>
+        </div>
+
+        <div class="figure-block">
+          <img src="../assets/img/esm-between-person-association.png" alt="Between-person association between average scarcity mindset and average mind wandering" />
+          <p class="figure-caption">
+            <strong>Between-person association.</strong> This plot asks whether participants who were generally higher in scarcity mindset also tended to be generally higher in mind wandering. In the pilot model, between-person scarcity was positively associated with mind wandering, <strong>b = 0.49, p = .004</strong>. Because the sample is small, the estimate should be treated as descriptive, but it demonstrates how ESM data can separate stable person-level differences from daily fluctuations.
+          </p>
+        </div>
+
+        <div class="figure-block">
+          <img src="../assets/img/esm-within-person-association.png" alt="Within-person association between daily deviations in scarcity mindset and daily deviations in mind wandering" />
+          <p class="figure-caption">
+            <strong>Within-person association.</strong> This person-centered plot asks a different question: on days when a participant reported more scarcity than their own average, did they also report more mind wandering than their own average? In this pilot, the within-person association was not clear, <strong>b = -0.38, p = .174</strong>. The value of the plot is that it shows how the question changes once each person is compared to themselves rather than to other people.
+          </p>
+        </div>
+      </section>
+
+      <section class="case-study-section">
+        <h2>Individual differences in associations</h2>
+
+        <p>
+          ESM data can also be used to explore whether the relationship between two daily experiences looks similar across people. With this pilot, person-specific estimates are necessarily unstable because each participant contributed only two or three daily observations. Still, the visualization shows the kind of individual-difference question that larger ESM studies can answer more confidently.
+        </p>
+
+        <div class="figure-block">
+          <img src="../assets/img/esm-slope-heterogeneity.png" alt="Person-specific correlations and slopes between mind wandering and scarcity mindset" />
+          <p class="figure-caption">
+            <strong>Person-specific associations.</strong> Each bar represents one participant’s estimated association between mind wandering and scarcity mindset. Most person-specific estimates in this small pilot were negative or near zero, with one positive pattern. Because each estimate is based on very few observations, this figure should be read as a demonstration of what can be extracted from ESM data rather than as evidence of reliable person-level differences.
+          </p>
+        </div>
+      </section>
+
+      <section class="case-study-section">
+        <h2>What this project demonstrates</h2>
+
+        <div class="case-study-grid">
+          <div class="finding-card">
+            <h3>Repeated-measures data structure</h3>
+            <p>
+              The workflow starts with one row per participant-day and builds from basic completion checks to person-level summaries and multilevel models.
+            </p>
+          </div>
+
+          <div class="finding-card">
+            <h3>Visualization-first analysis</h3>
+            <p>
+              The most useful outputs are visual: distributions, trajectories, variability summaries, and within-person versus between-person association plots.
+            </p>
+          </div>
+
+          <div class="finding-card">
+            <h3>Within-person decomposition</h3>
+            <p>
+              The analysis separates whether people who are generally higher in scarcity also report more mind wandering from whether a person’s higher-than-usual scarcity days are also higher-mind-wandering days.
+            </p>
+          </div>
+
+          <div class="finding-card">
+            <h3>Appropriate inference</h3>
+            <p>
+              Because this was a small pilot, the page emphasizes workflow, visualization, and methodological capability rather than overclaiming substantive effects.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="case-study-section" id="technical-appendix">
+        <h2>Technical appendix</h2>
+
+        <p>
+          The full technical appendix includes data import, completion checks, descriptive tables, person-level variability metrics, within-person association summaries, intraclass correlations, and a multilevel model decomposing scarcity mindset into within-person and between-person components.
+        </p>
+
+        <div class="button-row">
+          <a class="button" href="../assets/files/esm-pilot-technical-report.html">Open technical appendix</a>
+        </div>
+      </section>
+    </article>
+  </main>
+</body>
+</html>

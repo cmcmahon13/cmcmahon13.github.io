@@ -1,0 +1,1226 @@
+---
+title: "Linked Fate Study 1: Technical Appendix"
+author: "Casey McMahon"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: hide
+    keep_md: true
+---
+
+# Linked Fate Study 1: Technical Appendix
+
+This appendix documents the Study 1 analysis for the linked fate project. Study 1 examines whether people perceive linked fate differently across race-gender relationships in the workplace, with a focal comparison between **women of color's perceptions of linked fate with White women** and **White women's perceptions of linked fate with women of color**.
+
+## Data and Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+
+<style>
+.measure-card {
+  border: 1px solid #e5eef7;
+  border-radius: 1rem;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0 1.5rem;
+  background: #f7fbff;
+}
+.measure-list li {
+  margin-bottom: 0.45rem;
+}
+</style>
+
+```{r packages-and-data}
+library(boot)
+library(broom.mixed)
+library(car)
+library(CGPfunctions)
+library(corrplot)
+library(data.table)
+library(descriptr)
+library(DescTools)
+library(EFA.dimensions)
+library(emmeans)
+library(furniture)
+library(ggplot2)
+library(janitor)
+library(jtools)
+library(kableExtra)
+library(knitr)
+library(lattice)
+library(lintr)
+library(lme4)
+library(nlme)
+library(psych)
+library(readxl)
+library(rempsyc)
+library(Rmisc)
+library(rstatix)
+library(see)
+library(sjmisc)
+library(sjPlot)
+library(sjstats)
+library(stats)
+library(tidyverse)
+
+data = read_csv("/Users/cem2272/Dropbox/Research/current projects/diversity gatekeeping/rmds + data for OSF/lf 2race x 2gender/lf 2race x 2gender_wide_clean.csv")
+```
+
+```{r table-helpers, include=FALSE}
+format_p <- function(p) {
+  dplyr::case_when(
+    is.na(p) ~ "",
+    p < .001 ~ "< .001",
+    TRUE ~ sprintf("%.3f", p)
+  )
+}
+
+format_num <- function(x, digits = 2) {
+  ifelse(is.na(x), "", sprintf(paste0("%.", digits, "f"), x))
+}
+
+style_table <- function(tbl) {
+  tbl %>%
+    kableExtra::kable_styling(
+      full_width = FALSE,
+      position = "center",
+      bootstrap_options = c("striped", "hover", "condensed")
+    )
+}
+
+clean_scale_label <- function(x) {
+  dplyr::recode(
+    as.character(x),
+    "lf_woc_moc_mean" = "Women of color / men of color",
+    "lf_woc_ww_mean" = "Women of color / White women",
+    "lf_woc_wm_mean" = "Women of color / White men",
+    "lf_moc_ww_mean" = "Men of color / White women",
+    "lf_moc_wm_mean" = "Men of color / White men",
+    "lf_ww_wm_mean" = "White women / White men",
+    .default = as.character(x)
+  )
+}
+
+clean_group_label <- function(x) {
+  dplyr::recode(
+    as.character(x),
+    "poc" = "People of color",
+    "white" = "White participants",
+    "women" = "Women",
+    "men" = "Men",
+    "women of color" = "Women of color",
+    "men of color" = "Men of color",
+    "white women" = "White women",
+    "white men" = "White men",
+    .default = stringr::str_to_sentence(as.character(x))
+  )
+}
+
+clean_term_label <- function(term) {
+  term %>%
+    stringr::str_replace_all("gen_namewomen", "Participant gender: women") %>%
+    stringr::str_replace_all("race_namewhite", "Participant race: White") %>%
+    stringr::str_replace_all("scale_name", "Relationship: ") %>%
+    stringr::str_replace_all("lf_woc_moc_mean", "Women of color / men of color") %>%
+    stringr::str_replace_all("lf_woc_ww_mean", "Women of color / White women") %>%
+    stringr::str_replace_all("lf_woc_wm_mean", "Women of color / White men") %>%
+    stringr::str_replace_all("lf_moc_ww_mean", "Men of color / White women") %>%
+    stringr::str_replace_all("lf_moc_wm_mean", "Men of color / White men") %>%
+    stringr::str_replace_all("lf_ww_wm_mean", "White women / White men") %>%
+    stringr::str_replace_all(":", " × ")
+}
+
+make_alpha_row <- function(alpha_object, scale_label, n_items) {
+  tibble::tibble(
+    Scale = scale_label,
+    `Number of items` = n_items,
+    `Cronbach's alpha` = alpha_object$total$raw_alpha,
+    `Standardized alpha` = alpha_object$total$std.alpha,
+    `Average inter-item correlation` = alpha_object$total$average_r
+  )
+}
+
+one_sample_row <- function(df, var, mu, label) {
+  x <- df[[var]]
+  tt <- t.test(x, mu = mu)
+  d <- rstatix::cohens_d(df, stats::as.formula(paste(var, "~ 1")), mu = mu)
+  tibble::tibble(
+    Group = label,
+    N = sum(!is.na(x)),
+    M = mean(x, na.rm = TRUE),
+    SD = sd(x, na.rm = TRUE),
+    `Test value` = mu,
+    t = unname(tt$statistic),
+    df = unname(tt$parameter),
+    p = tt$p.value,
+    d = d$effsize
+  )
+}
+```
+
+
+## Sample Characteristics
+
+This section documents the final analytic sample after applying the study exclusions used in the analysis.
+
+### Participant Gender
+```{r sample-gender, results='asis'}
+# Gender coding: 1 = man, 2 = woman, 3 = nonbinary, 4 = another response
+# The analytic sample excludes participants outside the binary gender categories used in this design.
+data = subset(data, pgender != "3")
+data = subset(data, pgender != "4")
+
+data = data %>% 
+  mutate(gen_name =
+           case_when(pgender == 1 ~ "men",  
+                     pgender == 2 ~ "women"
+                     ))
+
+gender_table <- data %>%
+  dplyr::count(gen_name, name = "N") %>%
+  dplyr::mutate(
+    `Participant gender` = clean_group_label(gen_name),
+    Percentage = sprintf("%.2f", 100 * N / sum(N))
+  ) %>%
+  dplyr::select(`Participant gender`, N, Percentage)
+
+gender_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "c", "c"),
+    caption = "Participant gender"
+  ) %>%
+  style_table()
+```
+
+
+### Participant Race
+```{r sample-characteristics-race, results='asis'}
+# Race coding: 1 = Black, 2 = Hispanic/Latina, 3 = Asian, 4 = White, 5 = Multiracial/multiethnic, 6 = another race
+race_table <- data %>%
+  dplyr::filter(!is.na(prace)) %>%
+  dplyr::mutate(
+    `Participant race` = dplyr::recode(
+      as.character(prace),
+      "1" = "Black/African American",
+      "2" = "Hispanic or Latina/o",
+      "3" = "Asian/Asian American",
+      "4" = "White",
+      "5" = "Multiracial/Multiethnic",
+      "6" = "Another race",
+      .default = as.character(prace)
+    )
+  ) %>%
+  dplyr::count(`Participant race`, name = "N") %>%
+  dplyr::mutate(Percentage = sprintf("%.2f", 100 * N / sum(N)))
+
+race_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "c", "c"),
+    caption = "Participant race"
+  ) %>%
+  style_table()
+
+# Recoding race for study analyses: 1 = White; 2 = people of color.
+data$race_simple = dplyr::recode(data$prace, 
+                              " " = 99,
+                              "1" = 2, # Black
+                              "2" = 2, # Latina/o
+                              "3" = 2, # Asian
+                              "4" = 1, # White
+                              "5" = 2 # Multiracial/multiethnic
+                              ) 
+
+data$race_simple = as.factor(data$race_simple)
+
+data = data %>% 
+  mutate(race_name =
+           case_when(race_simple == 1 ~ "white",  
+                     race_simple == 2 ~ "poc"
+                     ))
+
+analytic_group_table <- data %>%
+  dplyr::count(group2, name = "N") %>%
+  dplyr::filter(!is.na(group2)) %>%
+  dplyr::mutate(
+    `Analytic group` = clean_group_label(group2),
+    Percentage = sprintf("%.2f", 100 * N / sum(N))
+  ) %>%
+  dplyr::select(`Analytic group`, N, Percentage)
+
+analytic_group_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "c", "c"),
+    caption = "Analytic race-gender groups"
+  ) %>%
+  style_table()
+```
+
+
+### Participant Age
+```{r sample-age, results='asis'}
+data$age = as.numeric(data$age)
+
+age_table <- tibble::tibble(
+  N = sum(!is.na(data$age)),
+  M = mean(data$age, na.rm = TRUE),
+  SD = sd(data$age, na.rm = TRUE),
+  Min = min(data$age, na.rm = TRUE),
+  Max = max(data$age, na.rm = TRUE)
+) %>%
+  dplyr::mutate(
+    M = sprintf("%.2f", M),
+    SD = sprintf("%.2f", SD),
+    Min = sprintf("%.0f", Min),
+    Max = sprintf("%.0f", Max)
+  )
+
+age_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("c", "c", "c", "c", "c"),
+    caption = "Participant age"
+  ) %>%
+  style_table()
+```
+
+
+## Reshape Data to Long Format 
+```{r wide2long}
+
+#all LF items 
+data_l_lfsb = data %>%
+  pivot_longer(cols = c("lfsb_woc_moc_1","lfsb_woc_moc_2","lfsb_woc_moc_3","lfsb_woc_moc_4","lfsb_woc_moc_5", "lfsb_woc_moc_6",
+                        "lfsb_woc_ww_1","lfsb_woc_ww_2","lfsb_woc_ww_3","lfsb_woc_ww_4","lfsb_woc_ww_5","lfsb_woc_ww_6",
+                        "lfsb_woc_wm_1","lfsb_woc_wm_2","lfsb_woc_wm_3", "lfsb_woc_wm_4", "lfsb_woc_wm_5", "lfsb_woc_wm_6",
+                        "lfsb_moc_wm_1","lfsb_woc_ww_2","lfsb_moc_ww_3","lfsb_moc_ww_4","lfsb_moc_ww_5","lfsb_moc_ww_6",
+                        "lfsb_moc_wm_1","lfsb_moc_wm_2","lfsb_moc_wm_3","lfsb_moc_wm_4","lfsb_moc_wm_5","lfsb_moc_wm_6",
+                        "lfsb_ww_wm_1","lfsb_ww_wm_2","lfsb_ww_wm_3","lfsb_ww_wm_4","lfsb_ww_wm_5","lfsb_ww_wm_6"), 
+               names_to = "scale_name", 
+               values_to = "scale_val")
+
+```
+
+## Exploratory Factor Analysis
+
+The exploratory factor analysis evaluates whether the linked fate items appear to capture a common underlying construct. This is useful because the later analyses rely on linked fate composite scores rather than interpreting each item separately. The exploratory factor analysis focuses on the focal women of color / White women linked fate items to inspect the structure of the scale. We find that a two factor solution best fits the data, but theoretically, one factor makes more sense and our measures of fit are tolerable, so we continue with the scale as a single factor. 
+
+### EFA for Women of Color / White Women Linked Fate Items
+EFA Function for easier output reading 
+credit = https://www.franciscowilhelm.com/blog/exploratory-factor-analysis-table/
+```{r EFAtable functions, echo = FALSE, results = 'hide'}
+
+fa_table <- function(x, varlabels = NULL, title = "Factor analysis results", diffuse = .20, small = .32, cross = .20, sort = TRUE) {
+  #get sorted loadings
+  require(dplyr)
+  require(purrr)
+  require(tibble)
+  require(gt)
+  if(sort == TRUE) {
+    x <- psych::fa.sort(x)
+  }
+  if(!is.null(varlabels)) {
+    if(length(varlabels) != nrow(x$loadings)) { warning("Number of variable labels and number of variables are unequal. Check your input!",
+                                                        call. = FALSE) }
+    if(sort == TRUE) {
+      varlabels <- varlabels[x$order]
+    }
+  }
+  if(is.null(varlabels)) {varlabels <- rownames(x$loadings)}
+
+  loadings <- data.frame(unclass(x$loadings))
+
+  #make nice names
+  factornamer <- function(nfactors) {
+    paste0("Factor_", 1:nfactors)}
+
+  nfactors <- ncol(loadings)
+  fnames <- factornamer(nfactors)
+  names(loadings) <- fnames
+
+  # prepare locations
+  factorindex <- apply(loadings, 1, function(x) which.max(abs(x)))
+
+  # adapted from from sjplot: getremovableitems
+  getRemovableItems <- function(dataframe, fctr.load.tlrn = diffuse) {
+    # clear vector
+    removers <- vector(length = nrow(dataframe))
+    # iterate each row of the data frame. each row represents
+    # one item with its factor loadings
+    for (i in seq_along(removers)) {
+      # get factor loadings for each item
+      rowval <- as.numeric(abs(dataframe[i, ]))
+      # retrieve highest loading
+      maxload <- max(rowval)
+      # retrieve 2. highest loading
+      max2load <- sort(rowval, TRUE)[2]
+      # check difference between both
+      if (abs(maxload - max2load) < fctr.load.tlrn) {
+        # if difference is below the tolerance,
+        # remeber row-ID so we can remove that items
+        # for further PCA with updated data frame
+        removers[i] <- TRUE
+      }
+    }
+    # return a vector with index numbers indicating which items
+    # have unclear loadings
+    return(removers)
+  }
+  if(nfactors > 1) {
+    removable <- getRemovableItems(loadings)
+    cross_loadings <- purrr::map2(fnames, seq_along(fnames), function(f, i) {
+      (abs(loadings[,f] > cross)) & (factorindex != i)
+    })
+  }
+
+  small_loadings <- purrr::map(fnames, function(f) {
+    abs(loadings[,f]) < small
+  })
+
+  ind_table <- dplyr::tibble(varlabels, loadings) %>%
+    dplyr::rename(Indicator = varlabels) %>%
+    dplyr::mutate(Communality = x$communality, Uniqueness = x$uniquenesses, Complexity = x$complexity) %>%
+    dplyr::mutate(across(starts_with("Factor"), round, 3))  %>%
+    dplyr::mutate(across(c(Communality, Uniqueness, Complexity), round, 2))
+
+
+  ind_table <- ind_table %>% gt(rowname_col = "Indicator") %>% tab_header(title = title)
+  # mark small loadiongs
+  for(f in seq_along(fnames)) {
+    ind_table <- ind_table %>%  tab_style(style = cell_text(color = "#D3D3D3", style = "italic"),
+                                          locations = cells_body(columns = fnames[f], rows = small_loadings[[f]]))
+  }
+  # mark cross loadings
+
+  if (nfactors > 1) {
+    for (f in seq_along(fnames)) {
+      ind_table <-
+        ind_table %>%  tab_style(
+          style = cell_text(style = "italic"),
+          locations = cells_body(columns = fnames[f], rows = cross_loadings[[f]])
+        )
+    }
+    # mark non-assignable indicators
+    ind_table <-
+      ind_table %>%  tab_style(style = cell_fill(color = "#D93B3B"),
+                               locations = cells_body(rows = removable))
+  }
+
+  # adapted from https://www.anthonyschmidt.co/post/2020-09-27-efa-tables-in-r/
+  Vaccounted <- x[["Vaccounted"]]
+  colnames(Vaccounted) <- fnames
+  if (nfactors > 1) {
+    Phi <- x[["Phi"]]
+    rownames(Phi) <- fnames
+    colnames(Phi) <- fnames
+    f_table <- rbind(Vaccounted, Phi) %>%
+      as.data.frame() %>%
+      rownames_to_column("Property") %>%
+      dplyr::mutate(across(where(is.numeric), round, 3)) %>%
+      gt() %>% tab_header(title = "Eigenvalues, Variance Explained, and Factor Correlations for Rotated Factor Solution")
+  }
+  else if(nfactors == 1) {
+    f_table <- rbind(Vaccounted) %>%
+      as.data.frame() %>%
+      rownames_to_column("Property") %>%
+      dplyr::mutate(across(where(is.numeric), round, 3)) %>%
+      gt() %>% tab_header(title = "Eigenvalues, Variance Explained, and Factor Correlations for Rotated Factor Solution")
+  }
+
+  return(list("ind_table" = ind_table, "f_table" = f_table))
+
+}
+
+```
+
+#### Check Factor-Analysis Assumptions
+```{r FAappropriate_woc_ww, results='asis'}
+#woc_ww items
+scales_woc_ww = subset(data, select = c(lfsb_woc_ww_1, lfsb_woc_ww_2, lfsb_woc_ww_3, lfsb_woc_ww_4, lfsb_woc_ww_5, lfsb_woc_ww_6))
+
+#correlation of all the items
+corr_woc_ww = corr.test(scales_woc_ww, method = "pearson")
+
+#checking the data to make sure FA is appropriate
+woc_ww_kmo = KMO(corr_woc_ww$r)
+woc_ww_bartlett = cortest.bartlett(corr_woc_ww$r, n = nrow(data))
+woc_ww_det = det(corr_woc_ww$r)
+
+fa_assumptions_table <- tibble::tibble(
+  Check = c("Kaiser-Meyer-Olkin MSA", "Bartlett's test of sphericity", "Correlation matrix determinant"),
+  Value = c(woc_ww_kmo$MSA, woc_ww_bartlett$chisq, woc_ww_det),
+  p = c(NA_real_, woc_ww_bartlett$p.value, NA_real_),
+  Interpretation = c(
+    "Higher values indicate that the item correlations are suitable for factor analysis.",
+    "A significant result indicates that the correlation matrix is not an identity matrix.",
+    "Very small values can indicate multicollinearity; this value is reported as a diagnostic."
+  )
+) %>%
+  dplyr::mutate(
+    Value = dplyr::case_when(
+      Check == "Correlation matrix determinant" ~ format(Value, scientific = TRUE, digits = 3),
+      TRUE ~ sprintf("%.2f", Value)
+    ),
+    p = format_p(p)
+  )
+
+fa_assumptions_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "c", "c", "l"),
+    caption = "Factor-analysis suitability checks for the women of color / White women linked fate items"
+  ) %>%
+  style_table()
+```
+
+
+#### Eigenvalues and Scree Plot
+```{r unrotated_woc_ww, results='asis'}
+ev <- eigen(corr_woc_ww$r) # get eigenvalues
+
+eigen_table <- tibble::tibble(
+  Factor = paste0("Factor ", seq_along(ev$values)),
+  Eigenvalue = ev$values
+) %>%
+  dplyr::mutate(Eigenvalue = sprintf("%.2f", Eigenvalue))
+
+eigen_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "c"),
+    caption = "Eigenvalues for women of color / White women linked fate items"
+  ) %>%
+  style_table()
+
+# Parallel analysis / scree plot
+parallel <- fa.parallel(scales_woc_ww, fm = "ml", cor = "cor")
+```
+
+
+#### Factor Solutions
+
+##### Two-Factor Solution
+```{r 2factor_woc_ww, results='asis'}
+fa_2 = fa(scales_woc_ww,nfactors=2, n.iter=100, rotate="promax", residuals=FALSE, covar=FALSE,symmetric=TRUE, warnings=TRUE, fm="ml", use="pairwise",cor="cor", correct=0,weight=NULL,smooth=FALSE)
+
+tables_2 <- fa_table(fa_2, title = "Two-factor solution: item loadings")
+tables_2$ind_table
+tables_2$f_table
+```
+
+
+##### One-Factor Solution
+```{r 1factor_woc_ww, results='asis'}
+fa_1 = fa(scales_woc_ww,nfactors=1, n.iter=100, rotate="promax", residuals=FALSE, covar=FALSE,symmetric=TRUE, warnings=TRUE, fm="ml", use="pairwise",cor="cor", correct=0,weight=NULL,smooth=FALSE)
+
+tables_1 <- fa_table(fa_1, title = "One-factor solution: item loadings")
+tables_1$ind_table
+tables_1$f_table
+```
+
+
+##### Three-Factor Solution
+```{r 3factors_woc_ww, results='asis'}
+fa_3 = fa(scales_woc_ww,nfactors=3, n.iter=100, rotate="promax", residuals=FALSE, covar=FALSE,symmetric=TRUE, warnings=TRUE, fm="ml", use="pairwise",cor="cor", correct=0,weight=NULL,smooth=FALSE)
+
+tables_3 <- fa_table(fa_3, title = "Three-factor solution: item loadings")
+tables_3$ind_table
+tables_3$f_table
+```
+
+
+## Confirmatory Factor Analysis
+
+This section compares one- and two-factor confirmatory factor models for the women of color / White women linked fate items.
+
+```{r cfa-models, results='asis'}
+library(lavaan)
+m1a  <- ' f  =~ lfsb_woc_ww_1 + lfsb_woc_ww_2 + lfsb_woc_ww_3 + lfsb_woc_ww_4 + lfsb_woc_ww_5 + lfsb_woc_ww_6'
+onefac6items_a <- cfa(m1a, data=data) 
+
+m2a  <- ' f1  =~ lfsb_woc_ww_1 + lfsb_woc_ww_2 + lfsb_woc_ww_3 
+          f2  =~ lfsb_woc_ww_4 + lfsb_woc_ww_5 + lfsb_woc_ww_6'
+twofac6items_a <- cfa(m2a, data=data) 
+
+fit_table <- tibble::tibble(
+  Model = c("One-factor model", "Two-factor model"),
+  CFI = c(lavaan::fitMeasures(onefac6items_a, "cfi"), lavaan::fitMeasures(twofac6items_a, "cfi")),
+  TLI = c(lavaan::fitMeasures(onefac6items_a, "tli"), lavaan::fitMeasures(twofac6items_a, "tli")),
+  RMSEA = c(lavaan::fitMeasures(onefac6items_a, "rmsea"), lavaan::fitMeasures(twofac6items_a, "rmsea")),
+  SRMR = c(lavaan::fitMeasures(onefac6items_a, "srmr"), lavaan::fitMeasures(twofac6items_a, "srmr"))
+) %>%
+  dplyr::mutate(dplyr::across(CFI:SRMR, ~ sprintf("%.3f", .x)))
+
+fit_table %>%
+  kableExtra::kable(
+    format = "html",
+    caption = "Comparison of confirmatory factor models",
+    align = c("l", "c", "c", "c", "c")
+  ) %>%
+  style_table()
+```
+
+Overall, the EFA and CFA results support treating the linked fate items as a coherent scale. The factor loadings and model-fit indices provide evidence that the items capture a shared construct.
+
+## Scale Construction
+
+The following sections construct linked fate scale scores for each race-gender relationship.
+
+### Linked Fate Items
+Participants rated the extent to which two race-gender groups were linked in the workplace. Items were measured on a 7-point scale from 1 = strongly disagree to 7 = strongly agree. Higher values indicate greater perceived linked fate.
+
+<div class="measure-card">
+<p><strong>Prompt:</strong> When thinking about [group 1] and [group 2] in the workplace, to what extent do you agree that...</p>
+<ul class="measure-list">
+  <li>Career progress for one group also means career progress for the other group.</li>
+  <li>If treatment for one of these groups gets worse, the treatment of the other group will also get worse.</li>
+  <li>If treatment for one of these groups gets better, the treatment of the other group will also get better.</li>
+  <li>[Group 1] and [group 2] have encountered similar discrimination in the past.</li>
+  <li>[Group 1] and [group 2] have had to deal with similar bias in the past.</li>
+  <li>Workplace issues that affect [group 1] also affect [group 2].</li>
+</ul>
+</div>
+
+
+#### All Linked Fate Items
+```{r all-linked-fate-items, results='hide'}
+
+##combined scales
+lfsb_all_scale = subset(data, select = c(lfsb_woc_moc_1, lfsb_woc_ww_1, lfsb_woc_wm_1, lfsb_moc_ww_1,lfsb_moc_wm_1, lfsb_ww_wm_1,
+                                          lfsb_woc_moc_2, lfsb_woc_ww_2, lfsb_woc_wm_2, lfsb_moc_ww_2,lfsb_moc_wm_2, lfsb_ww_wm_2,
+                                          lfsb_woc_moc_3, lfsb_woc_ww_3, lfsb_woc_wm_3, lfsb_moc_ww_3,lfsb_moc_wm_3, lfsb_ww_wm_3,
+                                          lfsb_woc_moc_4, lfsb_woc_ww_4, lfsb_woc_wm_4, lfsb_moc_ww_4,lfsb_moc_wm_4, lfsb_ww_wm_4,
+                                          lfsb_woc_moc_5, lfsb_woc_ww_5, lfsb_woc_wm_5, lfsb_moc_ww_5,lfsb_moc_wm_5, lfsb_ww_wm_5,
+                                          lfsb_woc_moc_6, lfsb_woc_ww_6, lfsb_woc_wm_6, lfsb_moc_ww_6,lfsb_moc_wm_6, lfsb_ww_wm_6))
+
+
+lfsb_all_alpha = psych::alpha(lfsb_all_scale, check.keys = TRUE) #alpha = .87
+lfsb_all_alpha
+
+data$lfsb_all_mean = rowmeans(data[, c("lfsb_woc_moc_1", "lfsb_woc_ww_1", "lfsb_woc_wm_1", "lfsb_moc_ww_1","lfsb_moc_wm_1", "lfsb_ww_wm_1",
+                                           "lfsb_woc_moc_2", "lfsb_woc_ww_2", "lfsb_woc_wm_2", "lfsb_moc_ww_2","lfsb_moc_wm_2", "lfsb_ww_wm_2",
+                                           "lfsb_woc_moc_3", "lfsb_woc_ww_3", "lfsb_woc_wm_3", "lfsb_moc_ww_3","lfsb_moc_wm_3", "lfsb_ww_wm_3",
+                                           "lfsb_woc_moc_4", "lfsb_woc_ww_4", "lfsb_woc_wm_4", "lfsb_moc_ww_4","lfsb_moc_wm_4", "lfsb_ww_wm_4",
+                                           "lfsb_woc_moc_5", "lfsb_woc_ww_5", "lfsb_woc_wm_5", "lfsb_moc_ww_5","lfsb_moc_wm_5", "lfsb_ww_wm_5",
+                                           "lfsb_woc_moc_6", "lfsb_woc_ww_6", "lfsb_woc_wm_6", "lfsb_moc_ww_6","lfsb_moc_wm_6", "lfsb_ww_wm_6")])
+
+summarySE(data, measurevar= c("lfsb_all_mean"), groupvars=c("race_name", "gen_name"), na.rm = TRUE) 
+summarySE(data, measurevar= c("lfsb_all_mean"), na.rm = TRUE) 
+
+
+```
+
+#### Women of Color / Men of Color Scale
+```{r lf_wocmoc, results='hide'}
+
+##combined scales
+lf_woc_moc_scale = subset(data, select = c(lfsb_woc_moc_1, lfsb_woc_moc_2, lfsb_woc_moc_3, lfsb_woc_moc_4, lfsb_woc_moc_5, lfsb_woc_moc_6))
+
+
+lf_woc_moc_alpha = psych::alpha(lf_woc_moc_scale, check.keys = TRUE) #alpha = .87
+lf_woc_moc_alpha
+
+data$lf_woc_moc_mean = rowmeans(data[, c("lfsb_woc_moc_1", "lfsb_woc_moc_2", "lfsb_woc_moc_3", "lfsb_woc_moc_4","lfsb_woc_moc_5", "lfsb_woc_moc_6")])
+
+summarySE(data, measurevar= c("lf_woc_moc_mean"), groupvars=c("race_name", "gen_name"), na.rm = TRUE) 
+summarySE(data, measurevar= c("lf_woc_moc_mean"), na.rm = TRUE) 
+
+```
+
+#### Women of Color / White Women Scale
+```{r lf_woc_ww, results='hide'}
+
+##combined scales
+lf_woc_ww_scale = subset(data, select = c(lfsb_woc_ww_1, lfsb_woc_ww_2, lfsb_woc_ww_3, lfsb_woc_ww_4, lfsb_woc_ww_5, lfsb_woc_ww_6))
+
+
+lf_woc_ww_alpha = psych::alpha(lf_woc_ww_scale, check.keys = TRUE) #alpha = .90
+lf_woc_ww_alpha
+
+data$lf_woc_ww_mean = rowmeans(data[, c("lfsb_woc_ww_1", "lfsb_woc_ww_2", "lfsb_woc_ww_3", "lfsb_woc_ww_4","lfsb_woc_ww_5", "lfsb_woc_ww_6")])
+
+summarySE(data, measurevar= c("lf_woc_ww_mean"), groupvars=c("race_name", "gen_name"), na.rm = TRUE) 
+summarySE(data, measurevar= c("lf_woc_ww_mean"), groupvars=c("gen_name"), na.rm = TRUE)
+summarySE(data, measurevar= c("lf_woc_ww_mean"), na.rm = TRUE) 
+
+```
+
+#### Women of Color / White Men Scale
+```{r lf_wocwm, results='hide'}
+
+##combined scales
+lf_woc_wm_scale = subset(data, select = c(lfsb_woc_wm_1, lfsb_woc_wm_2, lfsb_woc_wm_3, lfsb_woc_wm_4, lfsb_woc_wm_5, lfsb_woc_wm_6))
+
+
+lf_woc_wm_alpha = psych::alpha(lf_woc_wm_scale, check.keys = TRUE) #alpha = .90
+lf_woc_wm_alpha
+
+data$lf_woc_wm_mean = rowmeans(data[, c("lfsb_woc_wm_1", "lfsb_woc_wm_2", "lfsb_woc_wm_3", "lfsb_woc_wm_4","lfsb_woc_wm_5", "lfsb_woc_wm_6")])
+
+summarySE(data, measurevar= c("lf_woc_wm_mean"), groupvars=c("race_name", "gen_name"), na.rm = TRUE) 
+summarySE(data, measurevar= c("lf_woc_wm_mean"), na.rm = TRUE) 
+
+```
+
+#### Men of Color / White Women Scale
+```{r lf_moc_ww, results='hide'}
+
+##combined scales
+lf_moc_ww_scale = subset(data, select = c(lfsb_moc_ww_1, lfsb_moc_ww_2, lfsb_moc_ww_3, lfsb_moc_ww_4, lfsb_moc_ww_5, lfsb_moc_ww_6))
+
+
+lf_moc_ww_alpha = psych::alpha(lf_moc_ww_scale, check.keys = TRUE) #alpha = .90
+lf_moc_ww_alpha
+
+data$lf_moc_ww_mean = rowmeans(data[, c("lfsb_moc_ww_1", "lfsb_moc_ww_2", "lfsb_moc_ww_3", "lfsb_moc_ww_4","lfsb_moc_ww_5", "lfsb_moc_ww_6")])
+
+summarySE(data, measurevar= c("lf_moc_ww_mean"), groupvars=c("race_name", "gen_name"), na.rm = TRUE) 
+summarySE(data, measurevar= c("lf_moc_ww_mean"), na.rm = TRUE) 
+
+```
+
+#### Men of Color / White Men Scale
+```{r lf_moc_wm, results='hide'}
+
+##combined scales
+lf_moc_wm_scale = subset(data, select = c(lfsb_moc_wm_1, lfsb_moc_wm_2, lfsb_moc_wm_3, lfsb_moc_wm_4, lfsb_moc_wm_5, lfsb_moc_wm_6))
+
+
+lf_moc_wm_alpha = psych::alpha(lf_moc_wm_scale, check.keys = TRUE) #alpha = .90
+lf_moc_wm_alpha
+
+data$lf_moc_wm_mean = rowmeans(data[, c("lfsb_moc_wm_1", "lfsb_moc_wm_2", "lfsb_moc_wm_3", "lfsb_moc_wm_4","lfsb_moc_wm_5", "lfsb_moc_wm_6")])
+
+summarySE(data, measurevar= c("lf_moc_wm_mean"), groupvars=c("race_name", "gen_name"), na.rm = TRUE) 
+summarySE(data, measurevar= c("lf_moc_wm_mean"), na.rm = TRUE) 
+
+```
+
+#### White Women / White Men Scale
+
+```{r lf_ww_wm, results='hide'}
+
+##combined scales
+lf_ww_wm_scale = subset(data, select = c(lfsb_ww_wm_1, lfsb_ww_wm_2, lfsb_ww_wm_3, lfsb_ww_wm_4, lfsb_ww_wm_5, lfsb_ww_wm_6))
+
+
+lf_ww_wm_alpha = psych::alpha(lf_ww_wm_scale, check.keys = TRUE) #alpha = .90
+lf_ww_wm_alpha
+
+data$lf_ww_wm_mean = rowmeans(data[, c("lfsb_ww_wm_1", "lfsb_ww_wm_2", "lfsb_ww_wm_3", "lfsb_ww_wm_4","lfsb_ww_wm_5", "lfsb_ww_wm_6")])
+
+summarySE(data, measurevar= c("lf_ww_wm_mean"), groupvars=c("race_name", "gen_name"), na.rm = TRUE) 
+summarySE(data, measurevar= c("lf_ww_wm_mean"), na.rm = TRUE) 
+
+```
+
+
+### Scale Reliability and Descriptive Summary
+
+The reliability table summarizes internal consistency for each linked fate composite. The descriptive table summarizes each relationship rating across the full analytic sample.
+
+```{r scale-reliability-summary, results='asis'}
+reliability_table <- dplyr::bind_rows(
+  make_alpha_row(lfsb_all_alpha, "All linked fate items", ncol(lfsb_all_scale)),
+  make_alpha_row(lf_woc_moc_alpha, "Women of color / men of color", ncol(lf_woc_moc_scale)),
+  make_alpha_row(lf_woc_ww_alpha, "Women of color / White women", ncol(lf_woc_ww_scale)),
+  make_alpha_row(lf_woc_wm_alpha, "Women of color / White men", ncol(lf_woc_wm_scale)),
+  make_alpha_row(lf_moc_ww_alpha, "Men of color / White women", ncol(lf_moc_ww_scale)),
+  make_alpha_row(lf_moc_wm_alpha, "Men of color / White men", ncol(lf_moc_wm_scale)),
+  make_alpha_row(lf_ww_wm_alpha, "White women / White men", ncol(lf_ww_wm_scale))
+) %>%
+  dplyr::mutate(
+    `Cronbach's alpha` = sprintf("%.2f", `Cronbach's alpha`),
+    `Standardized alpha` = sprintf("%.2f", `Standardized alpha`),
+    `Average inter-item correlation` = sprintf("%.2f", `Average inter-item correlation`)
+  )
+
+reliability_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "c", "c", "c", "c"),
+    caption = "Reliability of linked fate composites"
+  ) %>%
+  style_table()
+```
+
+```{r scale-descriptive-summary, results='asis'}
+scale_descriptive_table <- data %>%
+  dplyr::select(
+    `Women of color / men of color` = lf_woc_moc_mean,
+    `Women of color / White women` = lf_woc_ww_mean,
+    `Women of color / White men` = lf_woc_wm_mean,
+    `Men of color / White women` = lf_moc_ww_mean,
+    `Men of color / White men` = lf_moc_wm_mean,
+    `White women / White men` = lf_ww_wm_mean
+  ) %>%
+  tidyr::pivot_longer(cols = dplyr::everything(), names_to = "Linked fate relationship", values_to = "Linked fate") %>%
+  dplyr::group_by(`Linked fate relationship`) %>%
+  dplyr::summarise(
+    N = sum(!is.na(`Linked fate`)),
+    M = mean(`Linked fate`, na.rm = TRUE),
+    SD = sd(`Linked fate`, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    M = sprintf("%.2f", M),
+    SD = sprintf("%.2f", SD)
+  )
+
+scale_descriptive_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "c", "c", "c"),
+    caption = "Descriptive statistics for linked fate composites"
+  ) %>%
+  style_table()
+```
+
+## Analyses
+
+### Mixed-Effects Model
+
+The mixed-effects model tests whether linked fate ratings differed as a function of participant race, participant gender, and the race-gender relationship being evaluated. Because each participant rated multiple linked fate relationships, participant ID was included as a random intercept. This accounts for the fact that observations from the same participant are not independent.
+
+Wide-to-long restructuring for the linked fate means:
+```{r}
+
+#creating the long df 
+data_l_lf_means = data %>%
+  pivot_longer(cols = c("lf_woc_moc_mean",
+                        "lf_woc_ww_mean",
+                        "lf_woc_wm_mean",
+                        "lf_moc_ww_mean",
+                        "lf_moc_wm_mean",
+                        "lf_ww_wm_mean"),
+               names_to = "scale_name", 
+               values_to = "scale_val")
+
+```
+#### Model Specification
+```{r lmm1, results='asis'}
+mod1<-lmer(scale_val~gen_name*race_name*scale_name + (1|ppid), data = data_l_lf_means)
+
+model_params <- parameters::model_parameters(
+  mod1,
+  effects = "fixed",
+  ci = 0.95,
+  p_adjust = "none"
+)
+
+format_p_text <- function(p) {
+  dplyr::case_when(
+    is.na(p) ~ "",
+    p < .001 ~ "< .001",
+    TRUE ~ sprintf("%.3f", p)
+  )
+}
+
+clean_parameter_label <- function(x) {
+  x <- as.character(x)
+
+  # Standardize separators first
+  x <- stringr::str_replace_all(x, " × ", " × ")
+  x <- stringr::str_replace_all(x, ":", " × ")
+
+  # Replace raw variable-level names
+  x <- stringr::str_replace_all(x, "gen_namewomen", "Participant gender: women")
+  x <- stringr::str_replace_all(x, "race_namewhite", "Participant race: White")
+
+  # Replace parameters-style variable-level names
+  x <- stringr::str_replace_all(x, "gen name \\[women\\]", "Participant gender: women")
+  x <- stringr::str_replace_all(x, "race name \\[white\\]", "Participant race: White")
+
+  # Replace raw scale names
+  x <- stringr::str_replace_all(x, "scale_namelf_woc_moc_mean", "Linked fate: women of color / men of color")
+  x <- stringr::str_replace_all(x, "scale_namelf_woc_ww_mean", "Linked fate: women of color / White women")
+  x <- stringr::str_replace_all(x, "scale_namelf_woc_wm_mean", "Linked fate: women of color / White men")
+  x <- stringr::str_replace_all(x, "scale_namelf_moc_ww_mean", "Linked fate: men of color / White women")
+  x <- stringr::str_replace_all(x, "scale_namelf_moc_wm_mean", "Linked fate: men of color / White men")
+  x <- stringr::str_replace_all(x, "scale_namelf_ww_wm_mean", "Linked fate: White women / White men")
+
+  # Replace versions where underscores may already have become spaces
+  x <- stringr::str_replace_all(x, "scale namelf woc moc mean", "Linked fate: women of color / men of color")
+  x <- stringr::str_replace_all(x, "scale namelf woc ww mean", "Linked fate: women of color / White women")
+  x <- stringr::str_replace_all(x, "scale namelf woc wm mean", "Linked fate: women of color / White men")
+  x <- stringr::str_replace_all(x, "scale namelf moc ww mean", "Linked fate: men of color / White women")
+  x <- stringr::str_replace_all(x, "scale namelf moc wm mean", "Linked fate: men of color / White men")
+  x <- stringr::str_replace_all(x, "scale namelf ww wm mean", "Linked fate: White women / White men")
+
+  # Replace parameters-style scale names
+  x <- stringr::str_replace_all(x, "scale name \\[lf woc moc mean\\]", "Linked fate: women of color / men of color")
+  x <- stringr::str_replace_all(x, "scale name \\[lf woc ww mean\\]", "Linked fate: women of color / White women")
+  x <- stringr::str_replace_all(x, "scale name \\[lf woc wm mean\\]", "Linked fate: women of color / White men")
+  x <- stringr::str_replace_all(x, "scale name \\[lf moc ww mean\\]", "Linked fate: men of color / White women")
+  x <- stringr::str_replace_all(x, "scale name \\[lf moc wm mean\\]", "Linked fate: men of color / White men")
+  x <- stringr::str_replace_all(x, "scale name \\[lf ww wm mean\\]", "Linked fate: White women / White men")
+
+  # Clean any leftover underscores/spaces/brackets
+  x <- stringr::str_replace_all(x, "_", " ")
+  x <- stringr::str_replace_all(x, "\\[|\\]", "")
+  x <- stringr::str_squish(x)
+
+  return(x)
+}
+
+model_table <- model_params %>%
+  dplyr::filter(Parameter != "(Intercept)") %>%
+  dplyr::mutate(
+    Predictor = clean_parameter_label(Parameter),
+    p_clean = format_p_text(p),
+    b = sprintf("%.2f", Coefficient),
+    SE = sprintf("%.2f", SE),
+    t = sprintf("%.2f", t)
+  ) %>%
+  dplyr::select(
+    Predictor,
+    b,
+    SE,
+    t,
+    p = p_clean
+  )
+
+model_table %>%
+  kableExtra::kable(
+    format = "html",
+    caption = "Mixed-effects model predicting linked fate ratings",
+    align = c("l", "c", "c", "c", "c"),
+    escape = TRUE
+  ) %>%
+  kableExtra::kable_styling(
+    full_width = FALSE,
+    position = "center",
+    bootstrap_options = c("striped", "hover", "condensed")
+  )
+```
+
+### Plot: Linked Fate Across Race-Gender Relationships
+```{r}
+
+pd = position_dodge(.92)
+
+data_l_lf_means %>%
+  ggplot(aes(x = scale_name, y= scale_val, colour = group2, fill = group2)) +
+  geom_bar(stat = "summary", 
+           fun = mean,
+           position = "dodge") +
+  stat_summary(fun.data=mean_se,
+               geom='errorbar',
+               #fun.args=list(conf.int=.95),
+               size=.6,
+               aes(width=.3),
+               color="black",
+               position=pd) +
+  coord_cartesian(ylim = c(1,7)) +
+  scale_y_continuous(name = "Linked fate", expand = c(0,0), breaks=seq(1,7,1)) + # set ticks at 1, 2, 3, 4 +
+  scale_x_discrete(name = "Relationship",
+                   limits = c("lf_woc_moc_mean",
+                        "lf_woc_ww_mean",
+                        "lf_woc_wm_mean",
+                        "lf_moc_ww_mean",
+                        "lf_moc_wm_mean",
+                        "lf_ww_wm_mean"),
+                   labels = c("lf_woc_moc_mean" = "Women of color\n& Men of color",
+                        "lf_woc_ww_mean" = "Women of color\n& White women",
+                        "lf_woc_wm_mean" = "Women of color\n& White men",
+                        "lf_moc_ww_mean" = "Men of color\n& White women",
+                        "lf_moc_wm_mean" = "Men of color\n& White men",
+                        "lf_ww_wm_mean" = "White women\n& White men")) +
+  theme_classic() +
+  theme(text = element_text(color = "black"),
+        axis.text.x = element_text(size = 12, color = "black", angle = 45, hjust = 0.9),
+        axis.title.x = element_text(size = 14, color = "black", margin = margin(0,0,0,0, unit = "cm")),
+        axis.title.y = element_text(size = 14, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black"),
+        legend.text = element_text(size = 12, color = "black"),
+        legend.title = element_text(size = 14, color = "black")
+        ) +
+  scale_fill_grey(labels = c("men of color" = "Men of color",
+                        "white men" = "White men",
+                        "white women" = "White women",
+                        "women of color" = "Women of color")) +
+  labs(fill = "Participant race \nand gender") +
+  scale_colour_grey(guide="none") +
+  theme(plot.margin = margin(.5,.1,0,.4, "cm"))  #(order goes top, right, bottom, left) 
+
+
+```
+
+### Post Hoc Comparisons
+
+Post hoc tests focus first on the core theoretical comparison between White women and women of color, then contextualize that comparison with race-based linked fate among people of color and White participants.
+
+#### Focal Comparison: White Women and Women of Color
+
+This comparison tests whether women of color perceive lower linked fate with White women than White women perceive with women of color.
+
+```{r ph1, results='asis'}
+emm_options(pbkrtest.limit = 4776)
+
+em_ww_woc = emmeans(mod1, specs = pairwise ~ gen_name*race_name*scale_name, 
+         at = list(gen_name = "women",
+                   scale_name = "lf_woc_ww_mean")) 
+
+focal_emmeans_table <- as.data.frame(summary(em_ww_woc$emmeans, infer = TRUE)) %>%
+  dplyr::mutate(
+    `Participant gender` = clean_group_label(gen_name),
+    `Participant race` = clean_group_label(race_name),
+    `Linked fate relationship` = clean_scale_label(scale_name),
+    M = sprintf("%.2f", emmean),
+    SE = sprintf("%.2f", SE),
+    `Lower 95% CI` = sprintf("%.2f", lower.CL),
+    `Upper 95% CI` = sprintf("%.2f", upper.CL)
+  ) %>%
+  dplyr::select(`Participant gender`, `Participant race`, `Linked fate relationship`, M, SE, `Lower 95% CI`, `Upper 95% CI`)
+
+focal_emmeans_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "l", "l", "c", "c", "c", "c"),
+    caption = "Estimated marginal means for the focal women of color / White women comparison"
+  ) %>%
+  style_table()
+
+focal_contrast_table <- as.data.frame(summary(em_ww_woc$contrasts, infer = TRUE)) %>%
+  dplyr::mutate(
+    Contrast = stringr::str_replace_all(contrast, c(
+      "women poc" = "Women of color participants",
+      "women white" = "White women participants",
+      " - " = " − "
+    )),
+    b = sprintf("%.2f", estimate),
+    SE = sprintf("%.2f", SE),
+    df = sprintf("%.1f", df),
+    t = sprintf("%.2f", t.ratio),
+    p = format_p(p.value)
+  ) %>%
+  dplyr::select(Contrast, b, SE, df, t, p)
+
+focal_contrast_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "c", "c", "c", "c", "c"),
+    caption = "Focal post hoc comparison"
+  ) %>%
+  style_table()
+
+focal_effect_size_table <- as.data.frame(eff_size(em_ww_woc$emmeans, sigma = sigma(mod1), edf = df.residual(mod1))) %>%
+  dplyr::mutate(
+    Contrast = stringr::str_replace_all(contrast, c(
+      "women poc" = "Women of color participants",
+      "women white" = "White women participants",
+      " - " = " − "
+    )),
+    d = sprintf("%.2f", effect.size),
+    SE = sprintf("%.2f", SE),
+    df = sprintf("%.1f", df),
+    `Lower 95% CI` = sprintf("%.2f", lower.CL),
+    `Upper 95% CI` = sprintf("%.2f", upper.CL)
+  ) %>%
+  dplyr::select(Contrast, d, SE, df, `Lower 95% CI`, `Upper 95% CI`)
+
+focal_effect_size_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "c", "c", "c", "c", "c"),
+    caption = "Standardized effect size for the focal comparison"
+  ) %>%
+  style_table()
+```
+
+The focal comparison shows that linked fate was asymmetric: women of color reported lower linked fate with White women than White women reported with women of color. This contrast motivates the follow-up studies, which examine what explains this asymmetry and whether it shapes reactions to workplace gender-equality initiatives.
+
+#### Tests Against the Scale Midpoint
+
+The midpoint tests examine whether each focal group differs from the neutral scale midpoint of 4.
+
+```{r midpoint-tests, results='asis'}
+data_woc = subset(data, group2 == "women of color")
+data_ww = subset(data, group2 == "white women")
+
+midpoint_table <- dplyr::bind_rows(
+  one_sample_row(data_woc, "lf_woc_ww_mean", 4, "Women of color rating linked fate with White women"),
+  one_sample_row(data_ww, "lf_woc_ww_mean", 4, "White women rating linked fate with women of color")
+) %>%
+  dplyr::mutate(
+    M = sprintf("%.2f", M),
+    SD = sprintf("%.2f", SD),
+    t = sprintf("%.2f", t),
+    df = sprintf("%.1f", df),
+    p = format_p(p),
+    d = sprintf("%.2f", d)
+  )
+
+midpoint_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "c", "c", "c", "c", "c", "c", "c", "c"),
+    caption = "One-sample tests against the scale midpoint"
+  ) %>%
+  style_table()
+```
+
+We see that while White women's average score is above the midpoint, women of color's average scoreis below the midpoint, underscoring the differences in their perceptions of linked fate. 
+
+#### Race-Based Linked Fate Comparisons
+
+These comparisons contextualize the focal gender-based linked fate result by examining race-based linked fate among people of color and White participants.
+
+##### Women of Color and Men of Color
+
+```{r ph2, results='asis'}
+em_woc_moc = emmeans(mod1, specs = pairwise ~ gen_name*race_name*scale_name, 
+         at = list(race_name = "poc",
+                   scale_name = "lf_woc_moc_mean")) 
+
+woc_moc_emmeans_table <- as.data.frame(summary(em_woc_moc$emmeans, infer = TRUE)) %>%
+  dplyr::mutate(
+    `Participant gender` = clean_group_label(gen_name),
+    `Participant race` = clean_group_label(race_name),
+    `Linked fate relationship` = clean_scale_label(scale_name),
+    M = sprintf("%.2f", emmean),
+    SE = sprintf("%.2f", SE),
+    `Lower 95% CI` = sprintf("%.2f", lower.CL),
+    `Upper 95% CI` = sprintf("%.2f", upper.CL)
+  ) %>%
+  dplyr::select(`Participant gender`, `Participant race`, `Linked fate relationship`, M, SE, `Lower 95% CI`, `Upper 95% CI`)
+
+woc_moc_emmeans_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "l", "l", "c", "c", "c", "c"),
+    caption = "Estimated marginal means for women of color / men of color linked fate"
+  ) %>%
+  style_table()
+
+woc_moc_contrast_table <- as.data.frame(summary(em_woc_moc$contrasts, infer = TRUE)) %>%
+  dplyr::mutate(
+    Contrast = stringr::str_replace_all(contrast, c(
+      "women poc" = "Women of color participants",
+      "men poc" = "Men of color participants",
+      " - " = " − "
+    )),
+    b = sprintf("%.2f", estimate),
+    SE = sprintf("%.2f", SE),
+    df = sprintf("%.1f", df),
+    t = sprintf("%.2f", t.ratio),
+    p = format_p(p.value)
+  ) %>%
+  dplyr::select(Contrast, b, SE, df, t, p)
+
+woc_moc_contrast_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "c", "c", "c", "c", "c"),
+    caption = "Post hoc comparison for women of color / men of color linked fate"
+  ) %>%
+  style_table()
+
+data_wocmoc = subset(data, race_name == "poc")
+
+race_midpoint_table <- dplyr::bind_rows(
+  one_sample_row(subset(data, group2 == "women of color"), "lf_woc_moc_mean", 4, "Women of color rating linked fate with men of color"),
+  one_sample_row(subset(data, group2 == "men of color"), "lf_woc_moc_mean", 4, "Men of color rating linked fate with women of color")
+) %>%
+  dplyr::mutate(
+    M = sprintf("%.2f", M),
+    SD = sprintf("%.2f", SD),
+    t = sprintf("%.2f", t),
+    df = sprintf("%.1f", df),
+    p = format_p(p),
+    d = sprintf("%.2f", d)
+  )
+
+race_midpoint_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "c", "c", "c", "c", "c", "c", "c", "c"),
+    caption = "One-sample midpoint tests for women of color / men of color linked fate"
+  ) %>%
+  style_table()
+```
+Here we see that women of color and men of color agree about the extent to which their fates are linked and both groups differ significantly from 4, meaning they agree that their fates are linked, on average. 
+
+##### White Women and White Men
+
+```{r ph4, results='asis'}
+em_ww_wm = emmeans(mod1, specs = pairwise ~ gen_name*race_name*scale_name, 
+         at = list(race_name = "white",
+                   scale_name = c("lf_ww_wm_mean"))) 
+
+ww_wm_emmeans_table <- as.data.frame(summary(em_ww_wm$emmeans, infer = TRUE)) %>%
+  dplyr::mutate(
+    `Participant gender` = clean_group_label(gen_name),
+    `Participant race` = clean_group_label(race_name),
+    `Linked fate relationship` = clean_scale_label(scale_name),
+    M = sprintf("%.2f", emmean),
+    SE = sprintf("%.2f", SE),
+    `Lower 95% CI` = sprintf("%.2f", lower.CL),
+    `Upper 95% CI` = sprintf("%.2f", upper.CL)
+  ) %>%
+  dplyr::select(`Participant gender`, `Participant race`, `Linked fate relationship`, M, SE, `Lower 95% CI`, `Upper 95% CI`)
+
+ww_wm_emmeans_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "l", "l", "c", "c", "c", "c"),
+    caption = "Estimated marginal means for White women / White men linked fate"
+  ) %>%
+  style_table()
+
+ww_wm_contrast_table <- as.data.frame(summary(em_ww_wm$contrasts, infer = TRUE)) %>%
+  dplyr::mutate(
+    Contrast = stringr::str_replace_all(contrast, c(
+      "women white" = "White women participants",
+      "men white" = "White men participants",
+      " - " = " − "
+    )),
+    b = sprintf("%.2f", estimate),
+    SE = sprintf("%.2f", SE),
+    df = sprintf("%.1f", df),
+    t = sprintf("%.2f", t.ratio),
+    p = format_p(p.value)
+  ) %>%
+  dplyr::select(Contrast, b, SE, df, t, p)
+
+ww_wm_contrast_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "c", "c", "c", "c", "c"),
+    caption = "Post hoc comparison for White women / White men linked fate"
+  ) %>%
+  style_table()
+
+white_midpoint_table <- dplyr::bind_rows(
+  one_sample_row(subset(data, group2 == "white women"), "lf_ww_wm_mean", 4, "White women rating linked fate with White men"),
+  one_sample_row(subset(data, group2 == "white men"), "lf_ww_wm_mean", 4, "White men rating linked fate with White women")
+) %>%
+  dplyr::mutate(
+    M = sprintf("%.2f", M),
+    SD = sprintf("%.2f", SD),
+    t = sprintf("%.2f", t),
+    df = sprintf("%.1f", df),
+    p = format_p(p),
+    d = sprintf("%.2f", d)
+  )
+
+white_midpoint_table %>%
+  kableExtra::kable(
+    format = "html",
+    align = c("l", "c", "c", "c", "c", "c", "c", "c", "c"),
+    caption = "One-sample midpoint tests for White women / White men linked fate"
+  ) %>%
+  style_table()
+```
+Meanwhile, White women and White men disagree about the extent to which their fates are linked, with White men seeing their fates as more linked. Additionally, both groups fall significantly below the midpoint of 4, suggesting they on average disagree that their fates are linked. 

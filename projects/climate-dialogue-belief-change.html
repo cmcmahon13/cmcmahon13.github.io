@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- STRUCTURE / SETTINGS: Usually do not edit unless changing site title or file paths. -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- EDIT TEXT: Browser tab title. -->
+  <title>When Dialogue Does Not Persuade Symmetrically | Casey McMahon</title>
+
+  <!-- STRUCTURE: Because this file is inside /projects, use ../ to reach assets. -->
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+
+<body>
+  <header class="site-header">
+    <a class="logo" href="../index.html">Casey McMahon</a>
+    <nav>
+      <a href="../index.html">Home</a>
+      <a href="../projects.html">Projects</a>
+      <a href="../contact.html">Contact</a>
+    </nav>
+  </header>
+
+  <main class="page">
+    <section class="project-hero">
+      <!-- EDIT TEXT: Project category label. -->
+      <p class="project-kicker">Belief to behavior · Real-time conversation · Mixed effects models</p>
+
+      <!-- EDIT TEXT: Project title. -->
+      <h1>When Dialogue Does Not Persuade Symmetrically</h1>
+
+      <!-- EDIT TEXT: Short project summary. -->
+      <p class="project-subtitle">
+        A case study analyzing an online conversation experiment to understand how group composition shaped belief change and environmental behavioral intentions.
+      </p>
+
+      <!-- EDIT TEXT: Tags. -->
+      <div class="project-meta">
+        <span>Mixed-effects models</span>
+        <span>Conversation design</span>
+        <span>Behavioral intention</span>
+        <span>Rmd workflow</span>
+      </div>
+
+      <!-- STRUCTURE: Keep href unless changing where the technical report lives. -->
+      <div class="button-row">
+        <a class="button" href="../assets/files/climate-conversation-portfolio-analysis.html">View Rmd report</a>
+        <a class="button secondary" href="../projects.html">Back to projects</a>
+      </div>
+    </section>
+
+    <article class="case-study">
+      <section class="case-study-section">
+        <h2>Overview</h2>
+        <p>
+          This project examines whether online group conversations can shift climate-change beliefs and environmental behavioral intentions. Participants were placed into short online conversations with others who either shared or opposed their starting views. The design created groups with different mixes of climate-change believers and skeptics, allowing the analysis to test whether conversational exposure operated similarly across audience segments.
+        </p>
+
+        <p>
+          The central insight is that dialogue did not appear to persuade symmetrically. Skeptics showed little evidence of average belief movement, while believers showed more negative belief change when exposed to more skeptical conversation contexts. At the same time, behavioral intention did not simply mirror belief change: believers still reported higher action-readiness than skeptics in several conversation contexts.
+        </p>
+      </section>
+
+      <section class="case-study-section">
+        <h2>Research question</h2>
+        <p>
+          When people discuss a polarized issue in small online groups, does exposure to opposing views shift beliefs and behavioral intentions in the same way for everyone?
+        </p>
+
+        <div class="callout">
+          <p>
+            <strong>Applied takeaway:</strong> Dialogue-based interventions should not be evaluated only by asking whether they “work” on average. They can produce different effects for different audience segments, and attitude change may not map directly onto behavioral intention.
+          </p>
+        </div>
+      </section>
+
+      <section class="case-study-section">
+        <h2>Study design</h2>
+
+        <div class="case-study-grid">
+          <div class="finding-card">
+            <h3>Conversation composition</h3>
+            <p>
+              Participants were sorted into four-person online chat rooms based on their starting climate-change beliefs. Groups varied in whether they included mostly believers, a balanced mix, or mostly skeptics.
+            </p>
+          </div>
+
+          <div class="finding-card">
+            <h3>Outcomes</h3>
+            <p>
+              The analysis focused on pre-to-post belief change and post-conversation behavioral intention, allowing the project to separate attitude movement from action-readiness.
+            </p>
+          </div>
+
+          <div class="finding-card">
+            <h3>Analytic approach</h3>
+            <p>
+              I used R to clean and reshape the data, estimate mixed-effects models with chat room as a random intercept, and visualize group-level patterns and post hoc comparisons.
+            </p>
+          </div>
+
+          <div class="finding-card">
+            <h3>Interpretive focus</h3>
+            <p>
+              Rather than treating the conversation as a single intervention effect, the analysis asks for whom the conversation mattered, under what social conditions, and for which outcomes.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="case-study-section">
+  <h2>Conversation structure</h2>
+
+  <p>
+    Participants were assigned to four-person online chat rooms based on their starting climate-change beliefs. The study varied the composition of each conversation group so that participants could be exposed to different levels of agreement and disagreement.
+  </p>
+
+  <div class="group-structure-grid">
+    <div class="group-structure-card">
+      <h3>Mostly believers</h3>
+      <div class="participant-row" aria-label="Three believers and one skeptic">
+        <span class="participant-dot believer">B</span>
+        <span class="participant-dot believer">B</span>
+        <span class="participant-dot believer">B</span>
+        <span class="participant-dot skeptic">S</span>
+      </div>
+      <p>
+        Three climate-change believers and one skeptic.
+      </p>
+    </div>
+
+    <div class="group-structure-card">
+      <h3>Balanced</h3>
+      <div class="participant-row" aria-label="Two believers and two skeptics">
+        <span class="participant-dot believer">B</span>
+        <span class="participant-dot believer">B</span>
+        <span class="participant-dot skeptic">S</span>
+        <span class="participant-dot skeptic">S</span>
+      </div>
+      <p>
+        Two climate-change believers and two skeptics.
+      </p>
+    </div>
+
+    <div class="group-structure-card">
+      <h3>Mostly skeptics</h3>
+      <div class="participant-row" aria-label="One believer and three skeptics">
+        <span class="participant-dot believer">B</span>
+        <span class="participant-dot skeptic">S</span>
+        <span class="participant-dot skeptic">S</span>
+        <span class="participant-dot skeptic">S</span>
+      </div>
+      <p>
+        One climate-change believer and three skeptics.
+      </p>
+    </div>
+  </div>
+
+  <div class="legend-row">
+    <span class="legend-item"><span class="legend-dot believer"></span> B = climate-change believer</span>
+    <span class="legend-item"><span class="legend-dot skeptic"></span> S = climate-change skeptic</span>
+  </div>
+</section>
+
+<section class="case-study-section">
+  <h2>Measures</h2>
+
+  <p>
+    The analysis focused on two outcome families: climate-change belief and behavioral intention. Belief items were measured using 0–100 thermometer-style scales, while behavioral intention items were measured using 1–7 Likert scale response scales.
+  </p>
+
+  <div class="case-study-grid">
+    <div class="finding-card">
+      <h3>Climate-change belief items</h3>
+      <p class="details-note">0–100 thermometer items</p>
+      <ul class="measure-list">
+        <li>Scientific evidence points to a warming trend in global climate.</li>
+        <li>Humans have very little effect on climate temperature. <em>Reverse-coded</em></li>
+        <li>Global warming presents a serious threat to human life.</li>
+      </ul>
+    </div>
+
+    <div class="finding-card">
+      <h3>Behavioral intention items</h3>
+      <p class="details-note">1–7 Likert-type items</p>
+      <ul class="measure-list">
+        <li>I intend to replace light bulbs in my home with more energy efficient bulbs.</li>
+        <li>I intend to recycle at home.</li>
+        <li>I intend to use reusable bags.</li>
+        <li>I intend to buy recycled paper.</li>
+        <li>I intend to vote for politicians who support environmental initiatives.</li>
+        <li>I intend to write to my representatives about environmental concerns.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+      <section class="case-study-section">
+        <h2>Key findings</h2>
+
+        <div class="case-study-grid">
+          <div class="finding-card">
+            <h3>Belief change was asymmetric</h3>
+            <p>
+              Skeptics showed little evidence of average movement from no change. Believers, by contrast, showed more negative belief movement, especially in balanced and mostly-skeptic conversation contexts.
+            </p>
+          </div>
+
+          <div class="finding-card">
+            <h3>Opposing-view exposure was not a simple persuasion dose</h3>
+            <p>
+              More exposure to opposing views did not simply move people toward the opposing side. The clearest pattern was that believers became less strong in their climate beliefs as skeptical exposure increased.
+            </p>
+          </div>
+
+          <div class="finding-card">
+            <h3>Behavioral intention told a different story</h3>
+            <p>
+              Believers often reported higher behavioral intentions than skeptics, even in contexts where their belief-change scores were negative.
+            </p>
+          </div>
+
+          <div class="finding-card">
+            <h3>Measurement matters</h3>
+            <p>
+              The results show why intervention evaluations should measure both belief change and behavioral intention rather than assuming one outcome fully captures the other.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="case-study-section">
+        <h2>Visual evidence</h2>
+
+        <div class="figure-block">
+          <img src="../assets/img/climate-belief-change-summary-1.png" alt="Belief change by starting belief and conversation composition" />
+          <p class="figure-caption">
+            <strong>Belief change by conversation composition.</strong> Believers showed more negative average belief change than skeptics, especially in balanced and mostly-skeptic groups. The dashed line marks no average belief change.
+          </p>
+        </div>
+
+          <div class="figure-block">
+          <img src="../assets/img/climate-mvmt-1.png" alt="Direction of belief movement by starting belief and conversation composition" />
+          <p class="figure-caption">
+            <strong>Directional movement diagnostic.</strong> This diagnostic view classifies participants by whether their belief change exceeded a meaningful threshold. It helps distinguish average movement from the distribution of individual responses.
+          </p>
+        </div>
+
+        <div class="figure-block">
+          <img src="../assets/img/climate-opposing-view-exposure-plot-1.png" alt="Belief change by number of opposing-view partners" />
+          <p class="figure-caption">
+            <strong>Exposure to opposing views.</strong> Opposing-view exposure did not operate like a simple persuasion dose. As exposure increased, believers showed increasingly negative belief change, while skeptics remained closer to no average change.
+          </p>
+        </div>
+
+        <div class="figure-block">
+          <img src="../assets/img/climate-belief-change-to-behavior-plot-1.png" alt="Relationship between belief change and behavioral intention" />
+          <p class="figure-caption">
+            <strong>Belief change and behavioral intention.</strong> This plot shows why belief change and action-readiness should be treated as related but distinct outcomes. Some participants showed negative belief movement while still reporting meaningful behavioral intention.
+          </p>
+        </div>
+
+        <div class="figure-block">
+          <img src="../assets/img/climate-behavioral-intention-summary-1.png" alt="Behavioral intention by starting belief and conversation composition" />
+          <p class="figure-caption">
+            <strong>Behavioral intention by group.</strong> Believers reported higher behavioral intentions than skeptics in several conversation contexts, even where their climate beliefs moved downward.
+          </p>
+        </div>
+
+      </section>
+
+      <section class="case-study-section">
+        <h2>Technical details</h2>
+        <p>
+          The full technical report includes the analysis plan, model tables, estimated marginal means, post hoc comparisons, movement diagnostics, and interpretation notes.
+        </p>
+
+        <p class="details-note">
+          The report was created from an R Markdown workflow and is linked here as a technical appendix.
+        </p>
+
+        <div class="button-row">
+          <a class="button" href="../assets/files/climate-conversation-portfolio-analysis.html">Open full technical report</a>
+        </div>
+      </section>
+
+ <section class="case-study-section">
+  <h2>Tradeoffs considered &amp; Reflections</h2>
+
+  <p>
+    This project was useful not only because of the statistical results, but also because it highlighted the practical complexity of running online interaction studies. Unlike a standard individual-level survey experiment, the intervention depended on forming live groups with specific belief compositions.
+  </p>
+
+  <ul class="tradeoff-list">
+    <li>
+      <strong>Small cell sizes require cautious interpretation.</strong>
+      Some conversation conditions had relatively small sample sizes, especially when broken down by participant type and group composition. I therefore interpret the findings as evidence of an important pattern rather than as final, definitive estimates.
+    </li>
+
+    <li>
+      <strong>Online interaction studies create operational constraints.</strong>
+      Group assignment depended on who joined the study at the same time. Because skeptics were harder to recruit on the online platforms used at the time, the study design required prioritizing the formation of mostly-skeptic groups when enough skeptical participants were available.
+    </li>
+
+    <li>
+      <strong>Dropout can disrupt intended group structures.</strong>
+      The experimental design targeted four-person groups with specific compositions, but participant dropout or no-shows can alter the realized conversation environment. That makes it important to distinguish intended assignment from the actual interaction context participants experienced.
+    </li>
+
+    <li>
+      <strong>Average effects can obscure heterogeneous responses.</strong>
+      The project motivated additional diagnostic checks because a mean belief-change score can hide whether many participants moved slightly or a smaller number of participants moved substantially.
+    </li>
+  </ul>
+
+  <div class="callout">
+    <p>
+      <strong>Design lesson:</strong> For live online group experiments, in addition to random assignment, it is improtant to also consider recruitment imbalances, timing, how groups form, and attrition. 
+    </p>
+  </div>
+</section>
+
+      <section class="case-study-section">
+        <h2>Learnings:</h2>
+        <p>
+          This project demonstrates how I approach people science and behavioral analytics work: coming up with interpretable questions, translating to design, using appropriate statistical models, and turning technical findings into practical implications for intervention design.
+        </p>
+      </section>
+    </article>
+  </main>
+
+  <footer>
+    <p>© 2026 Casey McMahon. Built with HTML and CSS.</p>
+  </footer>
+</body>
+</html>

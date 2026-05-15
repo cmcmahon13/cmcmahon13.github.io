@@ -1,0 +1,540 @@
+---
+title: "Linked Fate Study 2a: Technical Appendix"
+author: "Casey McMahon"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: hide
+    keep_md: true
+---
+
+# Study 2a: Black Women and White Women
+
+This technical appendix documents the Study 2a analyses for the linked fate project. The study examines whether Black women and White women differ in perceived linked fate and whether those differences are explained by perceived relational orientation and workplace treatment by people high in power and status.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+library(tidyverse)
+library(psych)
+library(knitr)
+library(kableExtra)
+
+format_p_text <- function(p) {
+  dplyr::case_when(
+    is.na(p) ~ "",
+    p < .001 ~ "< .001",
+    TRUE ~ sprintf("%.3f", p)
+  )
+}
+
+format_num <- function(x, digits = 2) {
+  ifelse(is.na(x), "", sprintf(paste0("%.", digits, "f"), x))
+}
+
+clean_kable <- function(data, caption = NULL, align = NULL, digits = 2, escape = TRUE) {
+  data %>%
+    knitr::kable(
+      format = "html",
+      caption = caption,
+      align = align,
+      digits = digits,
+      escape = escape
+    ) %>%
+    kableExtra::kable_styling(
+      full_width = FALSE,
+      position = "center",
+      bootstrap_options = c("striped", "hover", "condensed")
+    )
+}
+
+make_item_card <- function(title, subtitle, items) {
+  htmltools::tags$div(
+    class = "item-card",
+    htmltools::tags$h4(title),
+    htmltools::tags$p(class = "item-note", subtitle),
+    htmltools::tags$ul(
+      lapply(items, htmltools::tags$li)
+    )
+  )
+}
+
+reliability_row <- function(scale_name, item_data, alpha_obj = NULL) {
+  item_data <- as.data.frame(item_data)
+  n_items <- ncol(item_data)
+  if (is.null(alpha_obj)) {
+    alpha_obj <- psych::alpha(item_data, check.keys = TRUE)
+  }
+  tibble::tibble(
+    Scale = scale_name,
+    `Number of items` = n_items,
+    `Cronbach's alpha` = alpha_obj$total$raw_alpha,
+    `Standardized alpha` = alpha_obj$total$std.alpha,
+    `Average inter-item r` = alpha_obj$total$average_r
+  )
+}
+
+scale_descriptives <- function(data, vars, labels, group_var = "race_name") {
+  data %>%
+    dplyr::select(dplyr::all_of(c(group_var, vars))) %>%
+    tidyr::pivot_longer(
+      cols = dplyr::all_of(vars),
+      names_to = "scale",
+      values_to = "value"
+    ) %>%
+    dplyr::mutate(Scale = dplyr::recode(scale, !!!labels)) %>%
+    dplyr::group_by(Scale, .data[[group_var]]) %>%
+    dplyr::summarise(
+      N = sum(!is.na(value)),
+      M = mean(value, na.rm = TRUE),
+      SD = sd(value, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::rename(Group = dplyr::all_of(group_var)) %>%
+    dplyr::mutate(
+      M = format_num(M, 2),
+      SD = format_num(SD, 2)
+    )
+}
+
+pooled_d <- function(x, group) {
+  dat <- tibble::tibble(x = x, group = group) %>% dplyr::filter(!is.na(x), !is.na(group))
+  if (dplyr::n_distinct(dat$group) != 2) return(NA_real_)
+  groups <- levels(factor(dat$group))
+  d1 <- dat$x[dat$group == groups[1]]
+  d2 <- dat$x[dat$group == groups[2]]
+  s_pooled <- sqrt(((length(d1) - 1) * stats::var(d1) + (length(d2) - 1) * stats::var(d2)) / (length(d1) + length(d2) - 2))
+  (mean(d1) - mean(d2)) / s_pooled
+}
+
+comparison_table <- function(data, vars, labels, group_var = "race_name") {
+  purrr::map_dfr(vars, function(v) {
+    dat <- data %>% dplyr::select(group = dplyr::all_of(group_var), value = dplyr::all_of(v)) %>% dplyr::filter(!is.na(group), !is.na(value))
+    groups <- levels(factor(dat$group))
+    tt <- stats::t.test(value ~ group, data = dat, var.equal = TRUE)
+    desc <- dat %>% dplyr::group_by(group) %>% dplyr::summarise(M = mean(value), SD = sd(value), N = dplyr::n(), .groups = "drop")
+    tibble::tibble(
+      Scale = unname(labels[[v]]),
+      Contrast = paste(groups[1], "−", groups[2]),
+      `M1` = desc$M[match(groups[1], desc$group)],
+      `SD1` = desc$SD[match(groups[1], desc$group)],
+      `M2` = desc$M[match(groups[2], desc$group)],
+      `SD2` = desc$SD[match(groups[2], desc$group)],
+      t = unname(tt$statistic),
+      df = unname(tt$parameter),
+      p = tt$p.value,
+      d = pooled_d(dat$value, dat$group)
+    )
+  }) %>%
+    dplyr::mutate(
+      dplyr::across(c(M1, SD1, M2, SD2, t, d), ~ format_num(.x, 2)),
+      df = format_num(df, 0),
+      p = format_p_text(p)
+    )
+}
+
+midpoint_table <- function(data, var, label, group_var = "race_name", midpoint = 4) {
+  data %>%
+    dplyr::select(group = dplyr::all_of(group_var), value = dplyr::all_of(var)) %>%
+    dplyr::filter(!is.na(group), !is.na(value)) %>%
+    dplyr::group_by(group) %>%
+    dplyr::group_modify(~ {
+      tt <- stats::t.test(.x$value, mu = midpoint)
+      tibble::tibble(
+        M = mean(.x$value),
+        SD = sd(.x$value),
+        t = unname(tt$statistic),
+        df = unname(tt$parameter),
+        p = tt$p.value,
+        d = (mean(.x$value) - midpoint) / sd(.x$value)
+      )
+    }) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(
+      Scale = label,
+      dplyr::across(c(M, SD, t, d), ~ format_num(.x, 2)),
+      df = format_num(df, 0),
+      p = format_p_text(p)
+    ) %>%
+    dplyr::select(Scale, Group = group, M, SD, t, df, p, d)
+}
+
+run_parallel_mediation <- function(data, x, y, mediators, mediator_labels, boot = 10000, seed = 654321) {
+  dat <- data %>% dplyr::select(dplyr::all_of(c(x, y, mediators))) %>% tidyr::drop_na()
+  set.seed(seed)
+
+  mediator_models <- purrr::set_names(mediators) %>% purrr::map(~ stats::lm(stats::reformulate(x, .x), data = dat))
+  y_model <- stats::lm(stats::reformulate(c(x, mediators), y), data = dat)
+  total_model <- stats::lm(stats::reformulate(x, y), data = dat)
+
+  get_coef <- function(model, term) unname(stats::coef(model)[term])
+  get_p <- function(model, term) {
+    cf <- summary(model)$coefficients
+    if (!term %in% rownames(cf)) return(NA_real_)
+    unname(cf[term, ncol(cf)])
+  }
+
+  a <- purrr::map_dbl(mediator_models, get_coef, term = x)
+  b <- purrr::map_dbl(mediators, ~ get_coef(y_model, .x))
+  indirect <- a * b
+
+  boot_mat <- replicate(boot, {
+    idx <- sample(seq_len(nrow(dat)), replace = TRUE)
+    d <- dat[idx, , drop = FALSE]
+    med_mods <- purrr::set_names(mediators) %>% purrr::map(~ stats::lm(stats::reformulate(x, .x), data = d))
+    ym <- stats::lm(stats::reformulate(c(x, mediators), y), data = d)
+    tm <- stats::lm(stats::reformulate(x, y), data = d)
+    a_b <- purrr::map_dbl(med_mods, get_coef, term = x)
+    b_b <- purrr::map_dbl(mediators, ~ get_coef(ym, .x))
+    ind_b <- a_b * b_b
+    c(ind_b, `Total indirect` = sum(ind_b), Direct = get_coef(ym, x), Total = get_coef(tm, x))
+  })
+
+  boot_ci <- t(apply(boot_mat, 1, stats::quantile, probs = c(.025, .975), na.rm = TRUE))
+
+  path_table <- tibble::tibble(
+    Mediator = unname(mediator_labels[mediators]),
+    `a path` = a,
+    `a path p` = purrr::map_dbl(mediator_models, get_p, term = x),
+    `b path` = b,
+    `b path p` = purrr::map_dbl(mediators, ~ get_p(y_model, .x)),
+    `Indirect effect` = indirect,
+    `95% CI` = paste0("[", format_num(boot_ci[mediators, 1], 2), ", ", format_num(boot_ci[mediators, 2], 2), "]")
+  ) %>%
+    dplyr::mutate(
+      dplyr::across(c(`a path`, `b path`, `Indirect effect`), ~ format_num(.x, 2)),
+      `a path p` = format_p_text(`a path p`),
+      `b path p` = format_p_text(`b path p`)
+    )
+
+  effects <- c(`Total indirect` = sum(indirect), Direct = get_coef(y_model, x), Total = get_coef(total_model, x))
+  effects_table <- tibble::tibble(
+    Effect = names(effects),
+    Estimate = unname(effects),
+    `95% CI` = paste0("[", format_num(boot_ci[names(effects), 1], 2), ", ", format_num(boot_ci[names(effects), 2], 2), "]"),
+    p = c(NA_real_, get_p(y_model, x), get_p(total_model, x))
+  ) %>%
+    dplyr::mutate(
+      Estimate = format_num(Estimate, 2),
+      p = format_p_text(p)
+    )
+
+  list(path_table = path_table, effects_table = effects_table, n = nrow(dat))
+}
+
+style_item_cards <- htmltools::HTML('
+<style>
+.item-card {
+  border: 1px solid #e5eef7;
+  border-radius: 1rem;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+  background: #f7fbff;
+}
+.item-card h4 { margin-top: 0; }
+.item-card ul { margin-bottom: 0; }
+.item-note { color: #444; margin-bottom: .5rem; }
+</style>
+')
+```
+
+
+```{r load-data, include = FALSE}
+data <- readr::read_csv("~/Dropbox/Research/current projects/diversity gatekeeping/rmds + data for OSF/lf mediators/black_white/lf mediator_bw_ww_clean.csv") %>%
+  tibble::rowid_to_column("ppid") %>%
+  dplyr::mutate(
+    ppid = ppid + 100,
+    race_name = dplyr::case_when(
+      prace == 1 ~ "Black women",
+      prace == 4 ~ "White women"
+    ),
+    race_name = factor(race_name, levels = c("Black women", "White women"))
+  )
+
+style_item_cards
+```
+
+## Sample characteristics
+
+This section verifies the analytic sample and summarizes participant demographics.
+
+```{r sample-characteristics, echo=FALSE, results='asis'}
+
+race_table <- data %>%
+  dplyr::filter(!is.na(race_name)) %>%
+  dplyr::count(race_name, name = "N") %>%
+  dplyr::mutate(Percent = round(N / sum(N) * 100, 2)) %>%
+  dplyr::rename(`Participant group` = race_name)
+
+age_table <- data %>%
+  dplyr::mutate(age = as.numeric(age)) %>%
+  dplyr::summarise(
+    N = sum(!is.na(age)),
+    M = mean(age, na.rm = TRUE),
+    SD = sd(age, na.rm = TRUE),
+    Min = min(age, na.rm = TRUE),
+    Max = max(age, na.rm = TRUE)
+  ) %>%
+  dplyr::mutate(dplyr::across(c(M, SD, Min, Max), ~ round(.x, 2)))
+
+clean_kable(race_table, caption = "Participant race")
+clean_kable(age_table, caption = "Participant age")
+```
+
+## Measurement check: exploratory factor analysis
+
+The exploratory factor analysis checks whether the mediator items cluster in ways that are consistent with the planned scale construction. This section is used as a measurement check before creating composite scores for the main analyses.
+
+```{r efa-diagnostics, echo=FALSE, results='asis'}
+allitems <- data %>% dplyr::select(dplyr::all_of(c("sup_wb_1", "sup_wb_2", "sup_wb_3", "sup_wb_4", "sup_bw_1", "sup_bw_2", "sup_bw_3", "sup_bw_4", "comp_bw_1", "comp_bw_2", "comp_bw_3", "comp_bw_4", "comp_wb_1", "comp_wb_2", "comp_wb_3", "comp_wb_4", "bm_bw_e_1", "bm_bw_e_2", "bm_ww_e_1", "bm_ww_e_2", "bm_bw_b_1", "bm_bw_b_2", "bm_bw_b_3", "bm_bw_b_4", "bm_ww_b_1", "bm_ww_b_2", "bm_ww_b_3", "bm_ww_b_4")))
+corr_allitems <- psych::corr.test(allitems, method = "pearson")
+allitems_kmo <- psych::KMO(corr_allitems$r)
+bartlett <- psych::cortest.bartlett(corr_allitems$r, n = nrow(data))
+
+efa_diag <- tibble::tibble(
+  Diagnostic = c("KMO overall MSA", "Bartlett's test χ²", "Bartlett's test p", "Correlation matrix determinant"),
+  Value = c(
+    round(allitems_kmo$MSA, 3),
+    round(unname(bartlett$chisq), 2),
+    ifelse(bartlett$p.value < .001, "< .001", sprintf("%.3f", bartlett$p.value)),
+    signif(det(corr_allitems$r), 3)
+  )
+)
+
+clean_kable(efa_diag, caption = "Factor-analysis diagnostics")
+```
+
+```{r efa-eigenvalues, echo=FALSE, results='asis'}
+eigen_values <- eigen(corr_allitems$r)$values
+
+eigen_table <- tibble::tibble(
+  Factor = seq_along(eigen_values),
+  Eigenvalue = eigen_values
+) %>%
+  dplyr::slice(1:10) %>%
+  dplyr::mutate(Eigenvalue = round(Eigenvalue, 2))
+
+clean_kable(eigen_table, caption = "First 10 eigenvalues")
+```
+
+<details>
+<summary><strong>Show exploratory factor solution tables</strong></summary>
+
+```{r efa-factor-solutions, echo=FALSE, results='asis'}
+make_loading_table <- function(fa_object, caption) {
+  loadings <- as.data.frame(unclass(fa_object$loadings)) %>%
+    tibble::rownames_to_column("Item") %>%
+    dplyr::mutate(dplyr::across(where(is.numeric), ~ round(.x, 2)))
+
+  clean_kable(loadings, caption = caption)
+}
+
+fa_5 <- psych::fa(allitems, nfactors = 5, n.iter = 100, rotate = "promax", fm = "ml", use = "pairwise", cor = "cor")
+fa_6 <- psych::fa(allitems, nfactors = 6, n.iter = 100, rotate = "promax", fm = "ml", use = "pairwise", cor = "cor")
+fa_7 <- psych::fa(allitems, nfactors = 7, n.iter = 100, rotate = "promax", fm = "ml", use = "pairwise", cor = "cor")
+fa_8 <- psych::fa(allitems, nfactors = 8, n.iter = 100, rotate = "promax", fm = "ml", use = "pairwise", cor = "cor")
+fa_9 <- psych::fa(allitems, nfactors = 9, n.iter = 100, rotate = "promax", fm = "ml", use = "pairwise", cor = "cor")
+
+make_loading_table(fa_5, "Five-factor solution")
+make_loading_table(fa_6, "Six-factor solution")
+make_loading_table(fa_7, "Seven-factor solution")
+make_loading_table(fa_8, "Eight-factor solution")
+make_loading_table(fa_9, "Nine-factor solution")
+```
+
+</details>
+
+## Scale construction
+
+The analyses use composite scale scores for linked fate, relational orientation, pity elicitation, active facilitation, and intergroup contact. Items marked as reverse-coded were recoded before computing the composites.
+
+<div class="item-card">
+<h4>Relational orientation toward the other group</h4>
+<p class="item-note">Participants rated items about perceived support and competition between Black women and White women at work.</p>
+<ul>
+<li>White women really care about Black women's well-being at work.</li>
+<li>White women act competitively with Black women in the workplace. <em>Reverse-coded</em></li>
+<li>Black women really care about White women's well-being at work.</li>
+<li>Black women act competitively with White women in the workplace. <em>Reverse-coded</em></li>
+</ul>
+</div>
+
+<div class="item-card">
+<h4>Pity elicitation and active facilitation</h4>
+<p class="item-note">Participants rated how people high in power and status in organizations respond to each group.</p>
+<ul>
+<li>To what extent do people high in power and status feel pity toward White women at work?</li>
+<li>To what extent do people high in power and status feel sympathy toward Black women at work?</li>
+<li>To what extent do people high in power and status assist White women at work?</li>
+<li>To what extent do people high in power and status defend Black women at work?</li>
+</ul>
+</div>
+
+<div class="item-card">
+<h4>Linked fate</h4>
+<p class="item-note">Participants rated perceived shared workplace outcomes between Black women and White women.</p>
+<ul>
+<li>Career progress for one group also means career progress for the other group.</li>
+<li>If treatment for one of these groups gets worse, the treatment of the other group will also get worse.</li>
+<li>Workplace issues that affect Black women also affect White women.</li>
+<li>Black women and White women have encountered similar discrimination in the past.</li>
+</ul>
+</div>
+
+```{r construct-scales, include=FALSE}
+data$comp_wb_1r <- 8 - data$comp_wb_1
+data$comp_wb_3r <- 8 - data$comp_wb_3
+data$sup_wb_2r <- 8 - data$sup_wb_2
+data$sup_wb_3r <- 8 - data$sup_wb_3
+data$sup_wb_4r <- 8 - data$sup_wb_4
+
+data$comp_bw_1r <- 8 - data$comp_bw_1
+data$comp_bw_3r <- 8 - data$comp_bw_3
+data$sup_bw_2r <- 8 - data$sup_bw_2
+data$sup_bw_3r <- 8 - data$sup_bw_3
+data$sup_bw_4r <- 8 - data$sup_bw_4
+
+data$interact_3_r <- 8 - data$interact_3
+supp_comp_wb_scale <- data %>% dplyr::select(comp_wb_1r, comp_wb_2, comp_wb_3r, sup_wb_1, sup_wb_2r, sup_wb_3r, sup_wb_4r)
+supp_comp_bw_scale <- data %>% dplyr::select(comp_bw_1r, comp_bw_2, comp_bw_3r, sup_bw_1, sup_bw_2r, sup_bw_3r, sup_bw_4r)
+emotion_ww_scale <- data %>% dplyr::select(bm_ww_e_1, bm_ww_e_2)
+emotion_bw_scale <- data %>% dplyr::select(bm_bw_e_1, bm_bw_e_2)
+behavior_ww_scale <- data %>% dplyr::select(bm_ww_b_1, bm_ww_b_2, bm_ww_b_3, bm_ww_b_4)
+behavior_bw_scale <- data %>% dplyr::select(bm_bw_b_1, bm_bw_b_2, bm_bw_b_3, bm_bw_b_4)
+lf_scale <- data %>% dplyr::select(lfsb_1, lfsb_2, lfsb_3, lfsb_4, lfsb_5, lfsb_6)
+interact_scale <- data %>% dplyr::select(interact_1, interact_2, interact_3_r)
+
+data$supp_comp_wb <- rowMeans(as.data.frame(supp_comp_wb_scale), na.rm = TRUE)
+data$supp_comp_bw <- rowMeans(as.data.frame(supp_comp_bw_scale), na.rm = TRUE)
+data$emotion_ww <- rowMeans(as.data.frame(emotion_ww_scale), na.rm = TRUE)
+data$emotion_bw <- rowMeans(as.data.frame(emotion_bw_scale), na.rm = TRUE)
+data$behavior_ww <- rowMeans(as.data.frame(behavior_ww_scale), na.rm = TRUE)
+data$behavior_bw <- rowMeans(as.data.frame(behavior_bw_scale), na.rm = TRUE)
+data$linkedfate <- rowMeans(as.data.frame(lf_scale), na.rm = TRUE)
+data$contact <- rowMeans(as.data.frame(interact_scale), na.rm = TRUE)
+```
+
+```{r reliability-table, echo=FALSE, results='asis'}
+reliability_table <- dplyr::bind_rows(
+  reliability_row("White women relational orientation toward Black women", supp_comp_wb_scale),
+  reliability_row("Black women relational orientation toward White women", supp_comp_bw_scale),
+  reliability_row("Pity elicitation of White women", emotion_ww_scale),
+  reliability_row("Pity elicitation of Black women", emotion_bw_scale),
+  reliability_row("Active facilitation of White women", behavior_ww_scale),
+  reliability_row("Active facilitation of Black women", behavior_bw_scale),
+  reliability_row("Linked fate", lf_scale),
+  reliability_row("Intergroup contact", interact_scale)
+) %>%
+  dplyr::mutate(
+    dplyr::across(c(`Cronbach's alpha`), ~ round(.x, 2))
+  ) %>%
+  dplyr::select(c(`Scale`, `Cronbach's alpha`))
+
+clean_kable(reliability_table, caption = "Scale reliability")
+```
+
+```{r scale-descriptives, echo=FALSE, results='asis'}
+scale_labels <- c("linkedfate" = "Linked fate", "supp_comp_wb" = "White women relational orientation toward Black women", "supp_comp_bw" = "Black women relational orientation toward White women", "emotion_ww" = "Pity elicitation of White women", "emotion_bw" = "Pity elicitation of Black women", "behavior_ww" = "Active facilitation of White women", "behavior_bw" = "Active facilitation of Black women", "contact" = "Intergroup contact")
+scale_vars <- c("linkedfate", "supp_comp_wb", "supp_comp_bw", "emotion_ww", "emotion_bw", "behavior_ww", "behavior_bw", "contact")
+
+desc_table <- scale_descriptives(data, scale_vars, scale_labels)
+clean_kable(desc_table, caption = "Scale descriptives by participant group")
+```
+
+## Scale correlations
+
+The correlation table shows how the linked fate outcome relates to the mediator scales. This helps contextualize the later mediation model by showing whether the proposed mediators are associated with linked fate in the expected direction.
+
+```{r scale-correlations, echo=FALSE, results='asis'}
+cor_table <- data %>%
+  dplyr::select(dplyr::all_of(scale_vars)) %>%
+  corrr::correlate(use = "pairwise.complete.obs", quiet = TRUE) %>%
+  corrr::shave(upper = TRUE) %>%
+  dplyr::rename(Scale = term) %>%
+  dplyr::mutate(
+    Scale = dplyr::recode(Scale, !!!scale_labels)
+  )
+
+# Recode column names except the Scale column
+names(cor_table)[-1] <- dplyr::recode(
+  names(cor_table)[-1],
+  !!!scale_labels
+)
+
+# Format numeric columns
+cor_table <- cor_table %>%
+  dplyr::mutate(
+    dplyr::across(
+      where(is.numeric),
+      ~ sprintf("%.2f", .x)
+    )
+  ) %>%
+  dplyr::mutate(
+    dplyr::across(
+      -Scale,
+      ~ dplyr::if_else(.x == "NA", "", .x)
+    )
+  )
+
+clean_kable(cor_table, caption = "Scale correlations")
+```
+
+## Group comparisons
+
+These tests compare Black women and White women on linked fate and the proposed mediators. The key descriptive pattern is whether the groups differ not only in linked fate, but also in perceptions of relational orientation and workplace treatment.
+
+```{r group-comparisons, echo=FALSE, results='asis'}
+group_comparison_table <- comparison_table(data, scale_vars, scale_labels)
+clean_kable(group_comparison_table, caption = "Group comparisons on linked fate and mediator scales")
+```
+
+### Linked fate compared with the scale midpoint
+
+The midpoint tests show whether each group’s linked fate ratings are above or below the neutral point of the scale. This helps clarify whether group differences reflect one group reporting relatively high linked fate, the other reporting relatively low linked fate, or both.
+
+```{r midpoint-tests, echo=FALSE, results='asis'}
+midpoint_results <- midpoint_table(data, "linkedfate", "Linked fate", midpoint = 4)
+clean_kable(midpoint_results, caption = "One-sample tests comparing linked fate to the scale midpoint")
+```
+
+## Mediation model
+
+The mediation model tests whether the difference between Black women and White women in linked fate is explained by perceived relational orientation, pity elicitation, and active facilitation. Participant race is coded 0 = White women and 1 = Black women, so negative indirect effects indicate pathways that help explain lower linked fate among Black women relative to White women.
+
+```{r mediation-code}
+data <- data %>%
+  dplyr::mutate(
+    race_proc = dplyr::case_when(
+      race_name == "White women" ~ 0,
+      race_name == "Black women" ~ 1
+    )
+  )
+
+mediator_vars <- c("supp_comp_wb", "supp_comp_bw", "emotion_ww", "emotion_bw", "behavior_ww", "behavior_bw")
+mediator_labels <- c("supp_comp_wb" = "White women relational orientation toward Black women", "supp_comp_bw" = "Black women relational orientation toward White women", "emotion_ww" = "Pity elicitation of White women", "emotion_bw" = "Pity elicitation of Black women", "behavior_ww" = "Active facilitation of White women", "behavior_bw" = "Active facilitation of Black women")
+
+mediation_results <- run_parallel_mediation(
+  data = data,
+  x = "race_proc",
+  y = "linkedfate",
+  mediators = mediator_vars,
+  mediator_labels = mediator_labels,
+  boot = 10000,
+  seed = 654321
+)
+```
+
+```{r mediation-tables, echo=FALSE, results='asis'}
+clean_kable(mediation_results$path_table, caption = "Mediation paths and indirect effects")
+clean_kable(mediation_results$effects_table, caption = "Total, direct, and total indirect effects")
+```
+
+The mediation tables summarize all paths in the parallel mediation model. The indirect-effect table is the primary result: indirect effects with confidence intervals that do not include zero indicate mediators that help explain the linked fate difference between Black women and White women.

@@ -62,6 +62,14 @@ format_p <- function(p) {
   )
 }
 
+format_p_html <- function(p) {
+  dplyr::case_when(
+    is.na(p) ~ "",
+    p < .001 ~ "&lt; .001",
+    TRUE ~ sprintf("%.3f", p)
+  )
+}
+
 format_num <- function(x, digits = 2) {
   dplyr::if_else(is.na(x), "", sprintf(paste0("%.", digits, "f"), x))
 }
@@ -101,49 +109,31 @@ make_reliability_row <- function(scale_name, items) {
   )
 }
 
-format_p_text <- function(p) {
-  dplyr::case_when(
-    is.na(p) ~ "",
-    p < .001 ~ "< .001",
-    TRUE ~ sprintf("%.3f", p)
-  )
-}
-
 make_anova_table <- function(aov_model) {
+  raw_anova <- as.data.frame(summary(aov_model)[[1]]) %>%
+    tibble::rownames_to_column("Effect")
 
-  aov_df <- as.data.frame(summary(aov_model)[[1]]) %>%
-    tibble::rownames_to_column("Effect") %>%
+  error_ss <- raw_anova$`Sum Sq`[nrow(raw_anova)]
+
+  raw_anova %>%
+    dplyr::slice_head(n = nrow(raw_anova) - 1) %>%
     dplyr::rename(
       df = Df,
-      `Sum Sq` = `Sum Sq`,
-      `Mean Sq` = `Mean Sq`,
-      F = `F value`,
+      F_raw = `F value`,
       p_raw = `Pr(>F)`
-    )
-
-  # Find the residual/error row. Different ANOVA objects label this differently.
-  error_ss <- aov_df %>%
-    dplyr::filter(stringr::str_detect(stringr::str_to_lower(Effect), "residual|error")) %>%
-    dplyr::pull(`Sum Sq`)
-
-  # If there is no residual row, leave partial eta squared blank rather than erroring.
-  if (length(error_ss) == 0) {
-    error_ss <- NA_real_
-  } else {
-    error_ss <- error_ss[1]
-  }
-
-  aov_df %>%
-    dplyr::filter(!stringr::str_detect(stringr::str_to_lower(Effect), "residual|error")) %>%
+    ) %>%
     dplyr::mutate(
-      Effect = stringr::str_replace_all(Effect, ":", " × "),
-      F = format_num(F, 2),
-      p = format_p_text(p_raw),
-    `η<sub>p</sub>²` = if (is.na(error_ss)) {
-      ""
-    } else {
-      format_num(`Sum Sq` / (`Sum Sq` + error_ss), 2)
-    }
+      Effect = stringr::str_trim(Effect),
+      Effect = dplyr::recode(
+        Effect,
+        "webad_race" = "Workshop composition",
+        "prace_name" = "Participant race",
+        "webad_race:prace_name" = "Workshop composition × participant race",
+        .default = stringr::str_replace_all(Effect, ":", " × ")
+      ),
+      F = format_num(F_raw, 2),
+      p = format_p_html(p_raw),
+      `η<sub>p</sub>²` = format_num(`Sum Sq` / (`Sum Sq` + error_ss), 2)
     ) %>%
     dplyr::select(
       Effect,
@@ -200,13 +190,21 @@ make_posthoc_table <- function(model) {
       SE = format_num(SE, 2),
       df = format_num(df, 1),
       t = format_num(t.ratio, 2),
-      p = format_p(p.value),
+      p = format_p_html(p.value),
       d = format_num(d, 2)
     ) %>%
     dplyr::select(Contrast, b, SE, df, t, p, d)
 }
 
-run_simple_mediation <- function(data, x, m, y, boot = 10000, seed = 654321) {
+run_simple_mediation <- function(data,
+                                 x,
+                                 m,
+                                 y,
+                                 x_label = "Participant race",
+                                 m_label = "linked fate",
+                                 y_label = "outcome",
+                                 boot = 10000,
+                                 seed = 654321) {
   analysis_data <- data %>%
     dplyr::select(dplyr::all_of(c(x, m, y))) %>%
     stats::na.omit()
@@ -228,40 +226,72 @@ run_simple_mediation <- function(data, x, m, y, boot = 10000, seed = 654321) {
   set.seed(seed)
   boot_fun <- function(d, indices) {
     bd <- d[indices, , drop = FALSE]
+
     bm <- stats::lm(f_m, data = bd)
     by <- stats::lm(f_y, data = bd)
     bt <- stats::lm(f_total, data = bd)
+
     ba <- unname(stats::coef(bm)[x])
     bb <- unname(stats::coef(by)[m])
     bc_prime <- unname(stats::coef(by)[x])
     bc_total <- unname(stats::coef(bt)[x])
-    c(indirect = ba * bb, direct = bc_prime, total = bc_total)
+
+    c(
+      a = ba,
+      b = bb,
+      total = bc_total,
+      direct = bc_prime,
+      indirect = ba * bb
+    )
   }
 
-  boot_results <- boot::boot(analysis_data, statistic = boot_fun, R = boot)
+  boot_results <- boot::boot(
+    analysis_data,
+    statistic = boot_fun,
+    R = boot
+  )
+
   boot_mat <- boot_results$t
-  colnames(boot_mat) <- c("indirect", "direct", "total")
+  colnames(boot_mat) <- c("a", "b", "total", "direct", "indirect")
 
-  ci_indirect <- stats::quantile(boot_mat[, "indirect"], c(.025, .975), na.rm = TRUE)
-  ci_direct <- stats::quantile(boot_mat[, "direct"], c(.025, .975), na.rm = TRUE)
+  ci_a <- stats::quantile(boot_mat[, "a"], c(.025, .975), na.rm = TRUE)
+  ci_b <- stats::quantile(boot_mat[, "b"], c(.025, .975), na.rm = TRUE)
   ci_total <- stats::quantile(boot_mat[, "total"], c(.025, .975), na.rm = TRUE)
+  ci_direct <- stats::quantile(boot_mat[, "direct"], c(.025, .975), na.rm = TRUE)
+  ci_indirect <- stats::quantile(boot_mat[, "indirect"], c(.025, .975), na.rm = TRUE)
 
-  path_table <- tibble::tibble(
-    Path = c("a path: participant race → linked fate", paste0("b path: linked fate → ", y), paste0("Indirect effect: participant race → linked fate → ", y)),
-    Estimate = c(a, b, indirect),
-    SE = c(summary(m_model)$coefficients[x, "Std. Error"], summary(y_model)$coefficients[m, "Std. Error"], stats::sd(boot_mat[, "indirect"], na.rm = TRUE)),
-    `95% CI` = c("", "", paste0("[", sprintf("%.2f", ci_indirect[1]), ", ", sprintf("%.2f", ci_indirect[2]), "]"))
-  ) %>%
-    dplyr::mutate(
-      Estimate = format_num(Estimate, 2),
-      SE = format_num(SE, 2)
-    )
-
-  effects_table <- tibble::tibble(
-    Effect = c("Total effect", "Direct effect", "Indirect effect"),
-    Estimate = c(c_total, c_prime, indirect),
-    SE = c(summary(total_model)$coefficients[x, "Std. Error"], summary(y_model)$coefficients[x, "Std. Error"], stats::sd(boot_mat[, "indirect"], na.rm = TRUE)),
+  mediation_table <- tibble::tibble(
+    Effect = c(
+      "a path",
+      "b path",
+      "Total effect",
+      "Direct effect",
+      "Indirect effect"
+    ),
+    Description = c(
+      paste0(x_label, " → ", m_label),
+      paste0(m_label, " → ", y_label),
+      paste0(x_label, " → ", y_label),
+      paste0(x_label, " → ", y_label, " adjusting for ", m_label),
+      paste0(x_label, " → ", m_label, " → ", y_label)
+    ),
+    Estimate = c(
+      a,
+      b,
+      c_total,
+      c_prime,
+      indirect
+    ),
+    SE = c(
+      summary(m_model)$coefficients[x, "Std. Error"],
+      summary(y_model)$coefficients[m, "Std. Error"],
+      summary(total_model)$coefficients[x, "Std. Error"],
+      summary(y_model)$coefficients[x, "Std. Error"],
+      stats::sd(boot_mat[, "indirect"], na.rm = TRUE)
+    ),
     `95% CI` = c(
+      paste0("[", sprintf("%.2f", ci_a[1]), ", ", sprintf("%.2f", ci_a[2]), "]"),
+      paste0("[", sprintf("%.2f", ci_b[1]), ", ", sprintf("%.2f", ci_b[2]), "]"),
       paste0("[", sprintf("%.2f", ci_total[1]), ", ", sprintf("%.2f", ci_total[2]), "]"),
       paste0("[", sprintf("%.2f", ci_direct[1]), ", ", sprintf("%.2f", ci_direct[2]), "]"),
       paste0("[", sprintf("%.2f", ci_indirect[1]), ", ", sprintf("%.2f", ci_indirect[2]), "]")
@@ -272,7 +302,15 @@ run_simple_mediation <- function(data, x, m, y, boot = 10000, seed = 654321) {
       SE = format_num(SE, 2)
     )
 
-  list(path_table = path_table, effects_table = effects_table)
+  list(
+    mediation_table = mediation_table,
+    models = list(
+      mediator_model = m_model,
+      outcome_model = y_model,
+      total_model = total_model
+    ),
+    boot = boot_results
+  )
 }
 ```
 
@@ -370,44 +408,60 @@ Participants responded to all items on 1–7 agreement scales. Higher scores ind
 
 ```{r scale-construction}
 # Reverse-coded inclusion items
+# Use base rowMeans() with dplyr::pick() so the scale means are calculated
+# on the 1-7 item values and do not accidentally inherit other variables.
 data <- data %>%
   dplyr::mutate(
-    ex_1_r = dplyr::case_when(
-      ex_1 == 1 ~ 7,
-      ex_1 == 2 ~ 6,
-      ex_1 == 3 ~ 5,
-      ex_1 == 4 ~ 4,
-      ex_1 == 5 ~ 3,
-      ex_1 == 6 ~ 2,
-      ex_1 == 7 ~ 1,
-      TRUE ~ NA_real_
+    ex_1_r = 8 - ex_1,
+    ex_4_r = 8 - ex_4
+  ) %>%
+  dplyr::mutate(
+    sa_mean = rowMeans(
+      dplyr::pick(sa_1, sa_2, sa_3),
+      na.rm = TRUE
     ),
-    ex_4_r = dplyr::case_when(
-      ex_4 == 1 ~ 7,
-      ex_4 == 2 ~ 6,
-      ex_4 == 3 ~ 5,
-      ex_4 == 4 ~ 4,
-      ex_4 == 5 ~ 3,
-      ex_4 == 6 ~ 2,
-      ex_4 == 7 ~ 1,
-      TRUE ~ NA_real_
+    in_mean = rowMeans(
+      dplyr::pick(ex_1_r, ex_2, ex_3, ex_4_r),
+      na.rm = TRUE
     ),
-    sa_mean = furniture::rowmeans(dplyr::select(., sa_1, sa_2, sa_3)),
-    in_mean = furniture::rowmeans(dplyr::select(., ex_1_r, ex_2, ex_3, ex_4_r)),
-    lf_mean = furniture::rowmeans(dplyr::select(., lfsb_1, lfsb_2, lfsb_3, lfsb_4))
+    lf_mean = rowMeans(
+      dplyr::pick(lfsb_1, lfsb_2, lfsb_3, lfsb_4),
+      na.rm = TRUE
+    )
   )
 
-scale_items <- list(
-  "Self-applicability" = c("sa_1", "sa_2", "sa_3"),
-  "Inclusion" = c("ex_1_r", "ex_2", "ex_3", "ex_4_r"),
-  "Linked fate" = c("lfsb_1", "lfsb_2", "lfsb_3", "lfsb_4")
+# Confirm that the constructed scale scores remain on the expected 1-7 scale.
+scale_range_check <- data %>%
+  dplyr::summarise(
+    dplyr::across(
+      c(lf_mean, sa_mean, in_mean),
+      list(
+        min = ~ min(.x, na.rm = TRUE),
+        max = ~ max(.x, na.rm = TRUE)
+      )
+    )
+  )
+
+stopifnot(
+  min(data$lf_mean, na.rm = TRUE) >= 1,
+  max(data$lf_mean, na.rm = TRUE) <= 7,
+  min(data$sa_mean, na.rm = TRUE) >= 1,
+  max(data$sa_mean, na.rm = TRUE) <= 7,
+  min(data$in_mean, na.rm = TRUE) >= 1,
+  max(data$in_mean, na.rm = TRUE) <= 7
 )
 
-scale_vars <- c("sa_mean", "in_mean", "lf_mean")
+scale_items <- list(
+  "Linked fate" = c("lfsb_1", "lfsb_2", "lfsb_3", "lfsb_4"),
+  "Self-applicability" = c("sa_1", "sa_2", "sa_3"),
+  "Inclusion" = c("ex_1_r", "ex_2", "ex_3", "ex_4_r")
+)
+
+scale_vars <- c("lf_mean", "sa_mean", "in_mean")
 scale_labels <- c(
+  "lf_mean" = "Linked fate",
   "sa_mean" = "Self-applicability",
-  "in_mean" = "Inclusion",
-  "lf_mean" = "Linked fate"
+  "in_mean" = "Inclusion"
 )
 ```
 
@@ -426,6 +480,7 @@ clean_kable(reliability_table, caption = "Scale reliability")
 scale_descriptives <- data %>%
   dplyr::select(dplyr::all_of(scale_vars)) %>%
   tidyr::pivot_longer(dplyr::everything(), names_to = "Scale", values_to = "Score") %>%
+  dplyr::mutate(Scale = factor(Scale, levels = scale_vars)) %>%
   dplyr::group_by(Scale) %>%
   dplyr::summarise(
     N = sum(!is.na(Score)),
@@ -434,7 +489,7 @@ scale_descriptives <- data %>%
     .groups = "drop"
   ) %>%
   dplyr::mutate(
-    Scale = dplyr::recode(Scale, !!!scale_labels),
+    Scale = dplyr::recode(as.character(Scale), !!!scale_labels),
     M = format_num(M, 2),
     SD = format_num(SD, 2)
   )
@@ -482,7 +537,7 @@ lf_aov <- aov(lf_mean ~ webad_race * prace_name, data = data)
 This model tests whether participants felt more linked fate with panels that featured their own racial group than with panels featuring the other group.
 
 ```{r lf-anova-table, echo=FALSE, results='asis'}
-clean_kable(make_anova_table(lf_aov), caption = "Linked fate ANOVA results")
+clean_kable(make_anova_table(lf_aov), caption = "Linked fate ANOVA results", align = c("l", "c", "c", "c", "c"))
 ```
 
 ```{r lf-descriptives, echo=FALSE, results='asis'}
@@ -490,7 +545,7 @@ clean_kable(make_descriptive_table(data, "lf_mean"), caption = "Linked fate mean
 ```
 
 ```{r lf-posthoc, echo=FALSE, results='asis'}
-clean_kable(make_posthoc_table(lf_aov), caption = "Linked fate Tukey-adjusted post hoc comparisons")
+clean_kable(make_posthoc_table(lf_aov), caption = "Linked fate Tukey-adjusted post hoc comparisons", align = c("l", "c", "c", "c", "c", "c", "c"))
 ```
 
 ### Self-applicability
@@ -498,7 +553,7 @@ clean_kable(make_posthoc_table(lf_aov), caption = "Linked fate Tukey-adjusted po
 This model tests whether the workshop felt more applicable to participants when the panel featured mostly women from their own racial group.
 
 ```{r self-applicability-anova-table, echo=FALSE, results='asis'}
-clean_kable(make_anova_table(sa_aov), caption = "Self-applicability ANOVA results")
+clean_kable(make_anova_table(sa_aov), caption = "Self-applicability ANOVA results", align = c("l", "c", "c", "c", "c"))
 ```
 
 ```{r self-applicability-descriptives, echo=FALSE, results='asis'}
@@ -506,7 +561,7 @@ clean_kable(make_descriptive_table(data, "sa_mean"), caption = "Self-applicabili
 ```
 
 ```{r self-applicability-posthoc, echo=FALSE, results='asis'}
-clean_kable(make_posthoc_table(sa_aov), caption = "Self-applicability Tukey-adjusted post hoc comparisons")
+clean_kable(make_posthoc_table(sa_aov), caption = "Self-applicability Tukey-adjusted post hoc comparisons", align = c("l", "c", "c", "c", "c", "c", "c"))
 ```
 
 ### Inclusion
@@ -514,7 +569,7 @@ clean_kable(make_posthoc_table(sa_aov), caption = "Self-applicability Tukey-adju
 This model tests whether the workshop environment felt more inclusive when the panel featured mostly women from the participant's own racial group.
 
 ```{r inclusion-anova-table, echo=FALSE, results='asis'}
-clean_kable(make_anova_table(in_aov), caption = "Inclusion ANOVA results")
+clean_kable(make_anova_table(in_aov), caption = "Inclusion ANOVA results", align = c("l", "c", "c", "c", "c"))
 ```
 
 ```{r inclusion-descriptives, echo=FALSE, results='asis'}
@@ -522,7 +577,7 @@ clean_kable(make_descriptive_table(data, "in_mean"), caption = "Inclusion means 
 ```
 
 ```{r inclusion-posthoc, echo=FALSE, results='asis'}
-clean_kable(make_posthoc_table(in_aov), caption = "Inclusion Tukey-adjusted post hoc comparisons")
+clean_kable(make_posthoc_table(in_aov), caption = "Inclusion Tukey-adjusted post hoc comparisons", align = c("l", "c", "c", "c", "c", "c", "c"))
 ```
 
 Together, these analyses test whether representation in the workshop advertisement shaped linked fate, self-applicability, and inclusion differently for Latina women and White women.
@@ -561,6 +616,9 @@ sa_mediation_results <- run_simple_mediation(
   x = "prace_process",
   m = "lf_mean",
   y = "sa_mean",
+  x_label = "Participant race",
+  m_label = "linked fate",
+  y_label = "Self-applicability",
   boot = 10000,
   seed = 654321
 )
@@ -570,6 +628,9 @@ in_mediation_results <- run_simple_mediation(
   x = "prace_process",
   m = "lf_mean",
   y = "in_mean",
+  x_label = "Participant race",
+  m_label = "linked fate",
+  y_label = "Inclusion",
   boot = 10000,
   seed = 654321
 )
@@ -578,15 +639,21 @@ in_mediation_results <- run_simple_mediation(
 ### Self-applicability mediation
 
 ```{r self-applicability-mediation-tables, echo=FALSE, results='asis'}
-clean_kable(sa_mediation_results$path_table, caption = "Self-applicability mediation paths and indirect effect")
-clean_kable(sa_mediation_results$effects_table, caption = "Self-applicability total, direct, and indirect effects")
+clean_kable(
+  sa_mediation_results$mediation_table,
+  caption = "Self-applicability mediation effects",
+  align = c("c", "c", "c", "c", "c")
+)
 ```
 
 ### Inclusion mediation
 
 ```{r inclusion-mediation-tables, echo=FALSE, results='asis'}
-clean_kable(in_mediation_results$path_table, caption = "Inclusion mediation paths and indirect effect")
-clean_kable(in_mediation_results$effects_table, caption = "Inclusion total, direct, and indirect effects")
+clean_kable(
+  in_mediation_results$mediation_table,
+  caption = "Inclusion mediation effects",
+  align = c("c", "c", "c", "c", "c")
+)
 ```
 
 The mediation tables show whether linked fate statistically accounts for differences in self-applicability and inclusion in the cross-race workshop conditions. Significant indirect effects indicate that lower linked fate helps explain why the same gender-equality workshop may feel less applicable or inclusive when the panel primarily features the other racial group.
